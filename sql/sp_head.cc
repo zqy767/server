@@ -303,7 +303,7 @@ sp_get_flags_for_command(LEX *lex)
        - EXPLAIN DELETE ...
        - ANALYZE DELETE ...
     */
-    if (lex->select_lex.item_list.is_empty() &&
+    if (lex->first_select_lex()->item_list.is_empty() &&
         !lex->describe && !lex->analyze_stmt)
       flags= 0;
     else

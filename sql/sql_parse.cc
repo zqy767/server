@@ -1978,10 +1978,10 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       Init TABLE_LIST members necessary when the undelrying
       table is view.
     */
-    table_list.select_lex= &(thd->lex->select_lex);
+    table_list.select_lex= thd->lex->first_select_lex();
     thd->lex->
-      select_lex.table_list.link_in_list(&table_list,
-                                         &table_list.next_local);
+      first_select_lex()->table_list.link_in_list(&table_list,
+                                                  &table_list.next_local);
     thd->lex->add_to_query_tables(&table_list);
 
     if (is_infoschema_db(table_list.db, table_list.db_length))
@@ -2545,21 +2545,21 @@ int prepare_schema_table(THD *thd, LEX *lex, Table_ident *table_ident,
     {
       LEX_STRING db;
       size_t dummy;
-      if (lex->select_lex.db == NULL &&
-          lex->copy_db_to(&lex->select_lex.db, &dummy))
+      if (lex->first_select_lex()->db == NULL &&
+          lex->copy_db_to(&lex->first_select_lex()->db, &dummy))
       {
         DBUG_RETURN(1);
       }
       schema_select_lex= new (thd->mem_root) SELECT_LEX();
       schema_select_lex->table_list.first= NULL;
       if (lower_case_table_names == 1)
-        lex->select_lex.db= thd->strdup(lex->select_lex.db);
-      schema_select_lex->db= lex->select_lex.db;
+        lex->first_select_lex()->db= thd->strdup(lex->first_select_lex()->db);
+      schema_select_lex->db= lex->first_select_lex()->db;
       /*
         check_db_name() may change db.str if lower_case_table_names == 1,
         but that's ok as the db is allocted above in this case.
       */
-      db.str= (char*) lex->select_lex.db;
+      db.str= (char*) lex->first_select_lex()->db;
       db.length= strlen(db.str);
       if (check_db_name(&db))
       {
@@ -3192,7 +3192,7 @@ mysql_execute_command(THD *thd)
   int  up_result= 0;
   LEX  *lex= thd->lex;
   /* first SELECT_LEX (have special meaning for many of non-SELECTcommands) */
-  SELECT_LEX *select_lex= &lex->select_lex;
+  SELECT_LEX *select_lex= lex->first_select_lex();
   /* first table of first SELECT_LEX */
   TABLE_LIST *first_table= select_lex->table_list.first;
   /* list of all tables in query */
@@ -7547,7 +7547,7 @@ mysql_init_select(LEX *lex)
   SELECT_LEX *select_lex= lex->current_select;
   select_lex->init_select();
   lex->wild= 0;
-  if (select_lex == &lex->select_lex)
+  if (select_lex == lex->first_select_lex())
   {
     DBUG_ASSERT(lex->result == 0);
     lex->exchange= 0;
@@ -7572,27 +7572,39 @@ mysql_new_select(LEX *lex, bool move_down, SELECT_LEX *select_lex)
 {
   THD *thd= lex->thd;
   bool new_select= select_lex == NULL;
+  int old_nest_level= lex->current_select->nest_level;
   DBUG_ENTER("mysql_new_select");
+  if (lex->next_is_down)
+  {
+    DBUG_ASSERT(move_down == FALSE);
+    move_down= TRUE;
+    lex->next_is_down= FALSE;
+  }
 
   if (new_select)
   {
+    if (lex->next_is_main)
+    {
+      DBUG_ASSERT(move_down == FALSE);
+      lex->next_is_main= FALSE;
+      lex->current_select= &lex->builtin_select;
+      lex->current_select->braces_depth= lex->get_braces_depth();
+      DBUG_RETURN(FALSE);
+    }
     if (!(select_lex= new (thd->mem_root) SELECT_LEX()))
       DBUG_RETURN(1);
     select_lex->select_number= ++thd->select_number;
     select_lex->parent_lex= lex; /* Used in init_query. */
     select_lex->init_query();
     select_lex->init_select();
+    lex->current_select->braces_depth= lex->get_braces_depth();
   }
-  lex->nest_level++;
-  if (lex->nest_level > (int) MAX_SELECT_NESTING)
-  {
-    my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT, MYF(0));
-    DBUG_RETURN(1);
-  }
-  select_lex->nest_level= lex->nest_level;
   select_lex->nest_level_base= &thd->lex->unit;
   if (move_down)
   {
+    lex->nest_level++;
+    if (select_lex->set_nest_level(old_nest_level + 1))
+      DBUG_RETURN(1);
     SELECT_LEX_UNIT *unit;
     lex->subqueries= TRUE;
     /* first select_lex of subselect or derived table */
@@ -7638,14 +7650,18 @@ mysql_new_select(LEX *lex, bool move_down, SELECT_LEX *select_lex)
       DBUG_RETURN(TRUE);
     }
     // SELECT 1 FROM t1 ORDER BY 1 UNION SELECT 1 FROM t1 -- not possible
-    DBUG_ASSERT(!lex->current_select->order_list.first ||
-                lex->current_select->braces);
+    //DBUG_ASSERT(!lex->current_select->order_list.first ||
+    //            lex->current_select->braces);
     // SELECT 1 FROM t1 LIMIT 1 UNION SELECT 1 FROM t1;   -- not possible
-    DBUG_ASSERT(!lex->current_select->explicit_limit ||
-                lex->current_select->braces);
+    //DBUG_ASSERT(!lex->current_select->explicit_limit ||
+    //            lex->current_select->braces);
 
+    SELECT_LEX_NODE *save_slave= select_lex->slave;
     select_lex->include_neighbour(lex->current_select);
-    SELECT_LEX_UNIT *unit= select_lex->master_unit();                              
+    select_lex->slave= save_slave;
+    SELECT_LEX_UNIT *unit= select_lex->master_unit();
+    if (select_lex->set_nest_level(old_nest_level))
+      DBUG_RETURN(1);
     if (!unit->fake_select_lex && unit->add_fake_select_lex(lex->thd))
       DBUG_RETURN(1);
     select_lex->context.outer_context= 
@@ -7701,9 +7717,10 @@ void mysql_init_multi_delete(LEX *lex)
 {
   lex->sql_command=  SQLCOM_DELETE_MULTI;
   mysql_init_select(lex);
-  lex->select_lex.select_limit= 0;
+  lex->first_select_lex()->select_limit= 0;
   lex->unit.select_limit_cnt= HA_POS_ERROR;
-  lex->select_lex.table_list.save_and_clear(&lex->auxiliary_table_list);
+  lex->first_select_lex()->table_list.
+    save_and_clear(&lex->auxiliary_table_list);
   lex->query_tables= 0;
   lex->query_tables_last= &lex->query_tables;
 }
@@ -7985,7 +8002,7 @@ bool mysql_test_parse_for_slave(THD *thd, char *rawbuf, uint length)
     thd->reset_for_next_command();
 
     if (!parse_sql(thd, & parser_state, NULL, true) &&
-        all_tables_not_ok(thd, lex->select_lex.table_list.first))
+        all_tables_not_ok(thd, lex->first_select_lex()->table_list.first))
       error= 1;                  /* Ignore question */
     thd->end_statement();
   }
@@ -8563,7 +8580,7 @@ void st_select_lex::set_lock_for_tables(thr_lock_type lock_type)
 bool st_select_lex_unit::add_fake_select_lex(THD *thd_arg)
 {
   SELECT_LEX *first_sl= first_select();
-  DBUG_ENTER("add_fake_select_lex");
+  DBUG_ENTER("st_select_lex_unit::add_fake_select_lex");
   DBUG_ASSERT(!fake_select_lex);
 
   if (!(fake_select_lex= new (thd_arg->mem_root) SELECT_LEX()))
@@ -8573,7 +8590,7 @@ bool st_select_lex_unit::add_fake_select_lex(THD *thd_arg)
   fake_select_lex->select_number= INT_MAX;
   fake_select_lex->parent_lex= thd_arg->lex; /* Used in init_query. */
   fake_select_lex->make_empty_select();
-  fake_select_lex->linkage= GLOBAL_OPTIONS_TYPE;
+  fake_select_lex->set_linkage(GLOBAL_OPTIONS_TYPE);
   fake_select_lex->select_limit= 0;
 
   fake_select_lex->context.outer_context=first_sl->context.outer_context;
@@ -8582,7 +8599,8 @@ bool st_select_lex_unit::add_fake_select_lex(THD *thd_arg)
   fake_select_lex->context.select_lex= fake_select_lex;  
 
   fake_select_lex->nest_level_base= first_select()->nest_level_base;
-  fake_select_lex->nest_level=first_select()->nest_level;
+  if (fake_select_lex->set_nest_level(first_select()->nest_level))
+    DBUG_RETURN(1);
 
   if (!is_unit_op())
   {
@@ -8595,7 +8613,7 @@ bool st_select_lex_unit::add_fake_select_lex(THD *thd_arg)
     fake_select_lex->no_table_names_allowed= 1;
     thd_arg->lex->current_select= fake_select_lex;
   }
-  thd_arg->lex->pop_context();
+  thd_arg->lex->pop_context("add fake");
   DBUG_RETURN(0);
 }
 
@@ -8986,7 +9004,7 @@ bool check_simple_select()
 {
   THD *thd= current_thd;
   LEX *lex= thd->lex;
-  if (lex->current_select != &lex->select_lex)
+  if (lex->current_select != lex->first_select_lex())
   {
     char command[80];
     Lex_input_stream *lip= & thd->m_parser_state->m_lip;
@@ -9086,7 +9104,7 @@ bool multi_update_precheck(THD *thd, TABLE_LIST *tables)
   const char *msg= 0;
   TABLE_LIST *table;
   LEX *lex= thd->lex;
-  SELECT_LEX *select_lex= &lex->select_lex;
+  SELECT_LEX *select_lex= lex->first_select_lex();
   DBUG_ENTER("multi_update_precheck");
 
   if (select_lex->item_list.elements != lex->value_list.elements)
@@ -9122,7 +9140,7 @@ bool multi_update_precheck(THD *thd, TABLE_LIST *tables)
   /*
     Is there tables of subqueries?
   */
-  if (&lex->select_lex != lex->all_selects_list)
+  if (lex->first_select_lex() != lex->all_selects_list)
   {
     DBUG_PRINT("info",("Checking sub query list"));
     for (table= tables; table; table= table->next_global)
@@ -9165,7 +9183,7 @@ bool multi_update_precheck(THD *thd, TABLE_LIST *tables)
 
 bool multi_delete_precheck(THD *thd, TABLE_LIST *tables)
 {
-  SELECT_LEX *select_lex= &thd->lex->select_lex;
+  SELECT_LEX *select_lex= thd->lex->first_select_lex();
   TABLE_LIST *aux_tables= thd->lex->auxiliary_table_list.first;
   TABLE_LIST **save_query_tables_own_last= thd->lex->query_tables_own_last;
   DBUG_ENTER("multi_delete_precheck");
@@ -9282,7 +9300,7 @@ static TABLE_LIST *multi_delete_table_match(LEX *lex, TABLE_LIST *tbl,
 
 bool multi_delete_set_locks_and_link_aux_tables(LEX *lex)
 {
-  TABLE_LIST *tables= lex->select_lex.table_list.first;
+  TABLE_LIST *tables= lex->first_select_lex()->table_list.first;
   TABLE_LIST *target_tbl;
   DBUG_ENTER("multi_delete_set_locks_and_link_aux_tables");
 
@@ -9327,7 +9345,8 @@ bool multi_delete_set_locks_and_link_aux_tables(LEX *lex)
 bool update_precheck(THD *thd, TABLE_LIST *tables)
 {
   DBUG_ENTER("update_precheck");
-  if (thd->lex->select_lex.item_list.elements != thd->lex->value_list.elements)
+  if (thd->lex->first_select_lex()->item_list.elements !=
+      thd->lex->value_list.elements)
   {
     my_message(ER_WRONG_VALUE_COUNT, ER_THD(thd, ER_WRONG_VALUE_COUNT), MYF(0));
     DBUG_RETURN(TRUE);
@@ -9410,7 +9429,7 @@ void create_table_set_open_action_and_adjust_tables(LEX *lex)
   else
     create_table->open_type= OT_BASE_ONLY;
 
-  if (!lex->select_lex.item_list.elements)
+  if (!lex->first_select_lex()->item_list.elements)
   {
     /*
       Avoid opening and locking target table for ordinary CREATE TABLE
@@ -9441,7 +9460,7 @@ bool create_table_precheck(THD *thd, TABLE_LIST *tables,
                            TABLE_LIST *create_table)
 {
   LEX *lex= thd->lex;
-  SELECT_LEX *select_lex= &lex->select_lex;
+  SELECT_LEX *select_lex= lex->first_select_lex();
   ulong want_priv;
   bool error= TRUE;                                 // Error message is given
   DBUG_ENTER("create_table_precheck");

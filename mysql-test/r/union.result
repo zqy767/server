@@ -494,7 +494,7 @@ drop temporary table t1;
 create table t1 select a from t1 union select a from t2;
 ERROR 42S01: Table 't1' already exists
 select a from t1 union select a from t2 order by t2.a;
-ERROR 42000: Table 't2' from one of the SELECTs cannot be used in field list
+ERROR 42000: Table 't2' from one of the SELECTs cannot be used in global ORDER clause
 drop table t1,t2;
 select length(version()) > 1 as `*` UNION select 2;
 *
@@ -1532,13 +1532,11 @@ SELECT a FROM (SELECT a FROM t1 UNION SELECT a FROM t1 ORDER BY c) AS test;
 ERROR 42S22: Unknown column 'c' in 'order clause'
 DROP TABLE t1;
 (select 1 into @var) union (select 1);
-ERROR HY000: Incorrect usage of UNION and INTO
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'into @var) union (select 1)' at line 1
 (select 1) union (select 1 into @var);
-select @var;
-@var
-1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'into @var)' at line 1
 (select 2) union (select 1 into @var);
-ERROR 42000: Result consisted of more than one row
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'into @var)' at line 1
 CREATE TABLE t1 (a int);
 INSERT INTO t1 VALUES (10), (20);
 CREATE TABLE t2 (b int);

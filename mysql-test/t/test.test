@@ -1,0 +1,26 @@
+select 1 union ( select 2 union select 3);
+explain extended
+select 1 union ( select 2 union select 3);
+select 1 union ( select 1 union select 1);
+explain extended
+select 1 union ( select 1 union select 1);
+select 1 union all ( select 1 union select 1);
+explain extended
+select 1 union all ( select 1 union select 1);
+select 1 union ( select 1 union all select 1);
+explain extended
+select 1 union ( select 1 union all select 1);
+select 1 union select 1 union all select 1;
+explain extended
+select 1 union select 1 union all select 1;
+
+(select 1 as a) union (select 2) order by a;
+explain extended
+(select 1 as a) union (select 2) order by a;
+/* select#1 */ select 1 AS `a` union /* select#2 */ select 2 AS `2` order by `a`;
+explain extended
+/* select#1 */ select 1 AS `a` union /* select#2 */ select 2 AS `2` order by `a`;
+
+select 1 union ( select 1 union (select 1 union (select 1 union select 1)));
+explain extended all
+select 1 union ( select 1 union (select 1 union (select 1 union select 1)));

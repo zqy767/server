@@ -347,7 +347,7 @@ bool handle_select(THD *thd, LEX *lex, select_result *result,
                    ulong setup_tables_done_option)
 {
   bool res;
-  register SELECT_LEX *select_lex = &lex->select_lex;
+  register SELECT_LEX *select_lex= lex->first_select_lex();
   DBUG_ENTER("handle_select");
   MYSQL_SELECT_START(thd->query());
 
@@ -12380,7 +12380,8 @@ void JOIN::join_free()
       !(select_options & SELECT_NO_UNLOCK) &&
       !select_lex->subquery_in_having &&
       (select_lex == (thd->lex->unit.fake_select_lex ?
-                      thd->lex->unit.fake_select_lex : &thd->lex->select_lex)))
+                      thd->lex->unit.fake_select_lex :
+                      thd->lex->first_select_lex())))
   {
     /*
       TODO: unlock tables even if the join isn't top level select in the
@@ -18067,7 +18068,7 @@ create_internal_tmp_table_from_heap(THD *thd, TABLE *table,
   new_table.no_rows= table->no_rows;
   if (create_internal_tmp_table(&new_table, table->key_info, start_recinfo,
                                 recinfo,
-                                thd->lex->select_lex.options | 
+                                thd->lex->builtin_select.options |
 			        thd->variables.option_bits))
     goto err2;
   if (open_tmp_table(&new_table))
@@ -24544,7 +24545,8 @@ void JOIN_TAB::save_explain_data(Explain_table_access *eta,
     */
     if (real_table->merged_for_insert)
     {
-      TABLE_LIST *view_child= real_table->view->select_lex.table_list.first;
+      TABLE_LIST *view_child=
+        real_table->view->first_select_lex()->table_list.first;
       for (;view_child; view_child= view_child->next_local)
       {
         if (view_child->table == table)
@@ -25605,6 +25607,18 @@ void st_select_lex::print(THD *thd, String *str, enum_query_type query_type)
   {
     str->append("/* select#");
     str->append_ulonglong(select_number);
+    if (thd->lex->describe & DESCRIBE_EXTENDED2)
+    {
+      str->append("/");
+      str->append_ulonglong(nest_level);
+
+      if (master_unit()->fake_select_lex &&
+          master_unit()->first_select() == this)
+      {
+        str->append(" Filter Select: ");
+        master_unit()->fake_select_lex->print(thd, str, query_type);
+      }
+    }
     str->append(" */ ");
   }
 

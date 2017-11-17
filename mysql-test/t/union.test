@@ -973,12 +973,13 @@ DROP TABLE t1;
 
 #
 # Bug#23345: Wrongly allowed INTO in a non-last select of a UNION.
+# (fixed)
 #
---error 1221
+--error ER_PARSE_ERROR
 (select 1 into @var) union (select 1);
+--error ER_PARSE_ERROR
 (select 1) union (select 1 into @var);
-select @var;
---error 1172
+--error ER_PARSE_ERROR
 (select 2) union (select 1 into @var);
 
 #

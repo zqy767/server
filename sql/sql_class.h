@@ -5946,7 +5946,14 @@ public:
 
 inline bool add_item_to_list(THD *thd, Item *item)
 {
-  return thd->lex->current_select->add_item_to_list(thd, item);
+  DBUG_ENTER("add_item_to_list");
+
+  DBUG_PRINT("XXX", ("Add '%s' -> cur sel: %p (%d)", item->name.str,
+                     thd->lex->current_select,
+                     (thd->lex->current_select ?
+                      thd->lex->current_select->select_number : 0)));
+  bool res= thd->lex->current_select->add_item_to_list(thd, item);
+  DBUG_RETURN(res);
 }
 
 inline bool add_value_to_list(THD *thd, Item *value)

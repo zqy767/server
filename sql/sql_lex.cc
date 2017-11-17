@@ -182,7 +182,7 @@ init_lex_with_single_table(THD *thd, TABLE *table, LEX *lex)
 {
   TABLE_LIST *table_list;
   Table_ident *table_ident;
-  SELECT_LEX *select_lex= &lex->select_lex;
+  SELECT_LEX *select_lex= lex->first_select_lex();
   Name_resolution_context *context= &select_lex->context;
   /*
     We will call the parser to create a part_info struct based on the
@@ -681,10 +681,12 @@ void LEX::start(THD *thd_arg)
 
   context_stack.empty();
   unit.init_query();
-  select_lex.linkage= UNSPECIFIED_TYPE;
+  unit.init_select();
+  builtin_select.set_linkage(UNSPECIFIED_TYPE);
+  builtin_select.distinct= TRUE;
   /* 'parent_lex' is used in init_query() so it must be before it. */
-  select_lex.parent_lex= this;
-  select_lex.init_query();
+  builtin_select.parent_lex= this;
+  builtin_select.init_query();
   curr_with_clause= 0;
   with_clauses_list= 0;
   with_clauses_list_last_next= &with_clauses_list;
@@ -702,17 +704,17 @@ void LEX::start(THD *thd_arg)
   auxiliary_table_list.empty();
   unit.next= unit.master= unit.link_next= unit.return_to= 0;
   unit.prev= unit.link_prev= 0;
-  unit.slave= current_select= all_selects_list= &select_lex;
-  select_lex.master= &unit;
-  select_lex.prev= &unit.slave;
-  select_lex.link_next= select_lex.slave= select_lex.next= 0;
-  select_lex.link_prev= (st_select_lex_node**)&(all_selects_list);
-  select_lex.options= 0;
-  select_lex.sql_cache= SELECT_LEX::SQL_CACHE_UNSPECIFIED;
-  select_lex.init_order();
-  select_lex.group_list.empty();
-  if (select_lex.group_list_ptrs)
-    select_lex.group_list_ptrs->clear();
+  unit.slave= current_select= all_selects_list= &builtin_select;
+  builtin_select.master= &unit;
+  builtin_select.prev= &unit.slave;
+  builtin_select.link_next= builtin_select.slave= builtin_select.next= 0;
+  builtin_select.link_prev= (st_select_lex_node**)&(all_selects_list);
+  builtin_select.options= 0;
+  builtin_select.sql_cache= SELECT_LEX::SQL_CACHE_UNSPECIFIED;
+  builtin_select.init_order();
+  builtin_select.group_list.empty();
+  if (builtin_select.group_list_ptrs)
+    builtin_select.group_list_ptrs->clear();
   describe= 0;
   analyze_stmt= 0;
   explain_json= false;
@@ -722,14 +724,14 @@ void LEX::start(THD *thd_arg)
   safe_to_cache_query= 1;
   parsing_options.reset();
   empty_field_list_on_rset= 0;
-  select_lex.select_number= 1;
+  builtin_select.select_number= 1;
   part_info= 0;
-  select_lex.in_sum_expr=0;
-  select_lex.ftfunc_list_alloc.empty();
-  select_lex.ftfunc_list= &select_lex.ftfunc_list_alloc;
-  select_lex.group_list.empty();
-  select_lex.order_list.empty();
-  select_lex.gorder_list.empty();
+  builtin_select.in_sum_expr=0;
+  builtin_select.ftfunc_list_alloc.empty();
+  builtin_select.ftfunc_list= &builtin_select.ftfunc_list_alloc;
+  builtin_select.group_list.empty();
+  builtin_select.order_list.empty();
+  builtin_select.gorder_list.empty();
   m_sql_cmd= NULL;
   duplicates= DUP_ERROR;
   ignore= 0;
@@ -750,7 +752,7 @@ void LEX::start(THD *thd_arg)
   event_parse_data= NULL;
   profile_options= PROFILE_NONE;
   nest_level=0 ;
-  select_lex.nest_level_base= &unit;
+  builtin_select.nest_level_base= &unit;
   allow_sum_func= 0;
   in_sum_func= NULL;
 
@@ -772,6 +774,11 @@ void LEX::start(THD *thd_arg)
   win_spec= NULL;
 
   is_lex_started= TRUE;
+
+  braces_depth= 0;
+  next_is_main= FALSE;
+  next_is_down= FALSE;
+
   DBUG_VOID_RETURN;
 }
 
@@ -1845,7 +1852,7 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd)
       return(TEXT_STRING);
     }
     case MY_LEX_COMMENT:			//  Comment
-      lex->select_lex.options|= OPTION_FOUND_COMMENT;
+      lex->builtin_select.options|= OPTION_FOUND_COMMENT;
       while ((c = lip->yyGet()) != '\n' && c) ;
       lip->yyUnget();                   // Safety against eof
       state = MY_LEX_START;		// Try again
@@ -1856,7 +1863,7 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd)
 	state=MY_LEX_CHAR;		// Probable division
 	break;
       }
-      lex->select_lex.options|= OPTION_FOUND_COMMENT;
+      lex->builtin_select.options|= OPTION_FOUND_COMMENT;
       /* Reject '/' '*', since we might need to turn off the echo */
       lip->yyUnget();
 
@@ -2140,7 +2147,8 @@ void st_select_lex_node::init_query_common()
 {
   options= 0;
   sql_cache= SQL_CACHE_UNSPECIFIED;
-  linkage= UNSPECIFIED_TYPE;
+  set_linkage(UNSPECIFIED_TYPE);
+  distinct= TRUE;
   no_table_names_allowed= 0;
   uncacheable= 0;
 }
@@ -2148,7 +2156,7 @@ void st_select_lex_node::init_query_common()
 void st_select_lex_unit::init_query()
 {
   init_query_common();
-  linkage= GLOBAL_OPTIONS_TYPE;
+  set_linkage(GLOBAL_OPTIONS_TYPE);
   select_limit_cnt= HA_POS_ERROR;
   offset_limit_cnt= 0;
   union_distinct= 0;
@@ -2984,6 +2992,7 @@ LEX::LEX()
                       INITIAL_LEX_PLUGIN_LIST_SIZE, 0);
   reset_query_tables_list(TRUE);
   mi.init();
+  unit.slave= &builtin_select;
 }
 
 
@@ -3010,12 +3019,12 @@ bool LEX::can_be_merged()
   // TODO: do not forget implement case when select_lex.table_list.elements==0
 
   /* find non VIEW subqueries/unions */
-  bool selects_allow_merge= (select_lex.next_select() == 0 &&
-                             !(select_lex.uncacheable &
+  bool selects_allow_merge= (first_select_lex()->next_select() == 0 &&
+                             !(first_select_lex()->uncacheable &
                                UNCACHEABLE_RAND));
   if (selects_allow_merge)
   {
-    for (SELECT_LEX_UNIT *tmp_unit= select_lex.first_inner_unit();
+    for (SELECT_LEX_UNIT *tmp_unit= first_select_lex()->first_inner_unit();
          tmp_unit;
          tmp_unit= tmp_unit->next_unit())
     {
@@ -3032,12 +3041,12 @@ bool LEX::can_be_merged()
   }
 
   return (selects_allow_merge &&
-	  select_lex.group_list.elements == 0 &&
-	  select_lex.having == 0 &&
-          select_lex.with_sum_func == 0 &&
-	  select_lex.table_list.elements >= 1 &&
-	  !(select_lex.options & SELECT_DISTINCT) &&
-          select_lex.select_limit == 0);
+	  first_select_lex()->group_list.elements == 0 &&
+	  first_select_lex()->having == 0 &&
+          first_select_lex()->with_sum_func == 0 &&
+	  first_select_lex()->table_list.elements >= 1 &&
+	  !(first_select_lex()->options & SELECT_DISTINCT) &&
+          first_select_lex()->select_limit == 0);
 }
 
 
@@ -3393,7 +3402,7 @@ void LEX::set_trg_event_type_for_tables()
     Do not iterate over sub-selects, only the tables in the outermost
     SELECT_LEX can be modified, if any.
   */
-  TABLE_LIST *tables= select_lex.get_table_list();
+  TABLE_LIST *tables= first_select_lex()->get_table_list();
 
   while (tables)
   {
@@ -3449,12 +3458,13 @@ TABLE_LIST *LEX::unlink_first_table(bool *link_to_local)
     /*
       and from local list if it is not empty
     */
-    if ((*link_to_local= MY_TEST(select_lex.table_list.first)))
+    if ((*link_to_local= MY_TEST(first_select_lex()->table_list.first)))
     {
-      select_lex.context.table_list= 
-        select_lex.context.first_name_resolution_table= first->next_local;
-      select_lex.table_list.first= first->next_local;
-      select_lex.table_list.elements--;	//safety
+      first_select_lex()->context.table_list=
+        first_select_lex()->context.first_name_resolution_table=
+        first->next_local;
+      first_select_lex()->table_list.first= first->next_local;
+      first_select_lex()->table_list.elements--;	//safety
       first->next_local= 0;
       /*
         Ensure that the global list has the same first table as the local
@@ -3485,7 +3495,7 @@ TABLE_LIST *LEX::unlink_first_table(bool *link_to_local)
 
 void LEX::first_lists_tables_same()
 {
-  TABLE_LIST *first_table= select_lex.table_list.first;
+  TABLE_LIST *first_table= first_select_lex()->table_list.first;
   if (query_tables != first_table && first_table != 0)
   {
     TABLE_LIST *next;
@@ -3535,10 +3545,10 @@ void LEX::link_first_table_back(TABLE_LIST *first,
 
     if (link_to_local)
     {
-      first->next_local= select_lex.table_list.first;
-      select_lex.context.table_list= first;
-      select_lex.table_list.first= first;
-      select_lex.table_list.elements++;	//safety
+      first->next_local= first_select_lex()->table_list.first;
+      first_select_lex()->context.table_list= first;
+      first_select_lex()->table_list.first= first;
+      first_select_lex()->table_list.elements++;	//safety
     }
   }
 }
@@ -3567,19 +3577,19 @@ void LEX::cleanup_after_one_table_open()
     NOTE: all units will be connected to thd->lex->select_lex, because we
     have not UNION on most upper level.
     */
-  if (all_selects_list != &select_lex)
+  if (all_selects_list != first_select_lex())
   {
     derived_tables= 0;
-    select_lex.exclude_from_table_unique_test= false;
+    first_select_lex()->exclude_from_table_unique_test= false;
     /* cleunup underlying units (units of VIEW) */
-    for (SELECT_LEX_UNIT *un= select_lex.first_inner_unit();
+    for (SELECT_LEX_UNIT *un= first_select_lex()->first_inner_unit();
          un;
          un= un->next_unit())
       un->cleanup();
     /* reduce all selects list to default state */
-    all_selects_list= &select_lex;
+    all_selects_list= first_select_lex();
     /* remove underlying units (units of VIEW) subtree */
-    select_lex.cut_subtree();
+    first_select_lex()->cut_subtree();
   }
 }
 
@@ -4428,7 +4438,7 @@ void st_select_lex::set_explain_type(bool on_the_fly)
       using_materialization= TRUE;
   }
 
-  if (&master_unit()->thd->lex->select_lex == this)
+  if (master_unit()->thd->lex->first_select_lex() == this)
   {
      type= is_primary ? "PRIMARY" : "SIMPLE";
   }
@@ -4622,8 +4632,8 @@ bool LEX::save_prep_leaf_tables()
   Query_arena *arena= thd->stmt_arena, backup;
   arena= thd->activate_stmt_arena_if_needed(&backup);
   //It is used for DETETE/UPDATE so top level has only one SELECT
-  DBUG_ASSERT(select_lex.next_select() == NULL);
-  bool res= select_lex.save_prep_leaf_tables(thd);
+  DBUG_ASSERT(first_select_lex()->next_select() == NULL);
+  bool res= first_select_lex()->save_prep_leaf_tables(thd);
 
   if (arena)
     thd->restore_active_arena(arena, &backup);
@@ -4952,8 +4962,13 @@ bool LEX::is_partition_management() const
 
 SELECT_LEX *LEX::exclude_last_select()
 {
-  DBUG_ENTER("SELECT_LEX::exclude_last_select");
-  SELECT_LEX *exclude= current_select;
+  return exclude_not_first_select(current_select);
+}
+
+SELECT_LEX *LEX::exclude_not_first_select(SELECT_LEX *exclude)
+{
+  DBUG_ENTER("LEX::exclude_not_first_select");
+  DBUG_PRINT("enter", ("exclude %p #%u", exclude, exclude->select_number));
   SELECT_LEX_UNIT *unit= exclude->master_unit();
   SELECT_LEX *sl;
   DBUG_ASSERT(unit->first_select() != exclude);
@@ -4964,12 +4979,168 @@ SELECT_LEX *LEX::exclude_last_select()
   DBUG_PRINT("info", ("excl: %p  unit: %p  prev: %p", exclude, unit, sl));
   if (!sl)
     DBUG_RETURN(NULL);
-  DBUG_ASSERT(exclude->next_select() == NULL);
-  exclude->exclude_from_tree();
+  DBUG_ASSERT(&sl->next == exclude->prev);
+
+  exclude->prev= NULL;
+
   current_select= sl;
   DBUG_RETURN(exclude);
 }
 
+
+/*
+     SELECT_1 -> SELECT_EXCL -> SELECT_3 ...
+
+     SELECT_1 -> NULL
+        |
+        V
+        SELECT_EXCL -> SELECT_3
+*/
+
+
+SELECT_LEX *LEX::shift_selects_down(SELECT_LEX *exclude_start)
+{
+  SELECT_LEX_UNIT *unit= exclude_start->master_unit();
+  SELECT_LEX *prev_select;
+  DBUG_ENTER("LEX::schift_selects_down");
+
+  for (prev_select= unit->first_select();
+       prev_select && prev_select->next_select() != exclude_start;
+       prev_select= prev_select->next_select()) ;
+  if (!prev_select)
+    DBUG_RETURN(NULL);
+
+  prev_select->next= NULL;
+  current_select= prev_select;
+
+  SELECT_LEX *sl= exclude_start;
+  bool down= TRUE;
+  do{
+    SELECT_LEX *next= sl->next_select();
+    if (mysql_new_select(this, down, sl))
+      DBUG_RETURN(NULL);
+    down= FALSE;
+    DBUG_ASSERT(sl->outer_select() == prev_select);
+    sl= next;
+  } while (sl);
+
+  DBUG_ASSERT(unit != exclude_start->master_unit());
+  unit->fix_distinct(exclude_start->master_unit());
+
+  current_select= prev_select;
+  DBUG_RETURN(prev_select);
+}
+
+SELECT_LEX *LEX::push_selects_down(SELECT_LEX *exclude_start,
+                                   SELECT_LEX *exclude_end, bool automatic)
+{
+  SELECT_LEX_UNIT *unit= exclude_start->master_unit();
+  SELECT_LEX *dummy_select;
+  int old_nest_level= exclude_start->nest_level;
+  DBUG_ENTER("LEX::push_selects_down");
+
+  /* prepare dummy select */
+  if (!(dummy_select= new (thd->mem_root) SELECT_LEX()))
+    DBUG_RETURN(NULL);
+  dummy_select->select_number= ++thd->select_number;
+  dummy_select->parent_lex= this; /* Used in init_query. */
+  dummy_select->init_query();
+  dummy_select->init_select();
+  current_select->braces_depth= get_braces_depth();
+  dummy_select->nest_level_base= &this->unit;
+
+  dummy_select->context.outer_context= exclude_start->context.outer_context;
+  dummy_select->
+      include_global((st_select_lex_node**)&all_selects_list);
+  dummy_select->context.resolve_in_select_list= TRUE;
+  dummy_select->set_linkage(exclude_start->linkage);
+  /* cut out the chain and put dummy_select instaed */
+  exclude_start->prev[0]= dummy_select;
+  dummy_select->prev= exclude_start->prev;
+  dummy_select->master= unit;
+  if ((dummy_select->next= exclude_end))
+  {
+    exclude_end->prev[0]= NULL;
+    exclude_end->prev= &dummy_select->next;
+  }
+
+  //current_select= dummy_select;
+  //mysql_init_select(this);
+  if (make_select_in_brackets(dummy_select, exclude_start, automatic))
+      DBUG_RETURN(NULL);
+
+  DBUG_ASSERT(unit != exclude_start->master_unit());
+  unit->fix_distinct(exclude_start->master_unit());
+
+  current_select= dummy_select;
+  if (dummy_select->set_nest_level(old_nest_level))
+    DBUG_RETURN(NULL);
+  DBUG_PRINT("info", ("Dummy returned: %p", dummy_select));
+  DBUG_RETURN(dummy_select);
+}
+
+/*
+SELECT_LEX *LEX::push_selects_down(SELECT_LEX *exclude_start)
+{
+  DBUG_ENTER("LEX::push_selects_down");
+  SELECT_LEX_UNIT *unit= exclude_start->master_unit();
+
+
+  if (unit->first_select() == exclude_start)
+  {
+    SELECT_LEX *dummy_select;
+    SELECT_LEX *distinct= unit->union_distinct;
+    int old_nest_level= exclude_start->nest_level;
+    unit->union_distinct= NULL;
+    unit->slave= NULL;
+
+    if (!(dummy_select= new (thd->mem_root) SELECT_LEX()))
+      DBUG_RETURN(NULL);
+    dummy_select->select_number= ++thd->select_number;
+    dummy_select->parent_lex= this;
+    dummy_select->init_query();
+    dummy_select->init_select();
+    current_select->braces_depth= get_braces_depth();
+    dummy_select->nest_level_base= &this->unit;
+
+    dummy_select->include_down(unit);
+    dummy_select->context.outer_context= exclude_start->context.outer_context;
+    dummy_select->
+      include_global((st_select_lex_node**)&all_selects_list);
+    current_select= dummy_select;
+    dummy_select->context.resolve_in_select_list= TRUE;
+
+    mysql_init_select(this);
+    current_select->set_linkage(exclude_start->linkage);
+
+    if (make_select_in_brackets(dummy_select, exclude_start, FALSE))
+      DBUG_RETURN(NULL);
+
+    DBUG_ASSERT(unit != exclude_start->master_unit());
+    exclude_start->master_unit()->union_distinct= distinct;
+
+    current_select= dummy_select;
+    //lex->nest_level++;
+    if (dummy_select->set_nest_level(old_nest_level))
+      DBUG_RETURN(NULL);
+    DBUG_PRINT("info", ("Dummy returned: %p", dummy_select));
+    DBUG_RETURN(dummy_select);
+  }
+
+  if (!exclude_not_first_select(exclude_start) ||
+      add_unit_in_brackets(exclude_start))
+    DBUG_RETURN(NULL);
+  if (unit->union_distinct && unit != unit->union_distinct->master_unit())
+  {
+    SELECT_LEX *distinct_sel= unit->union_distinct;
+    distinct_sel->master_unit()->union_distinct= distinct_sel;
+    unit->union_distinct= NULL;
+  }
+  DBUG_PRINT("info", ("Current outer returned: %p",
+             current_select->master_unit()->outer_select()));
+  DBUG_RETURN(current_select->master_unit()->outer_select());
+}
+*/
 
 /**
   Put given (new) SELECT_LEX level below after currect (last) SELECT
@@ -4993,13 +5164,43 @@ SELECT_LEX *LEX::exclude_last_select()
 bool LEX::add_unit_in_brackets(SELECT_LEX *nselect)
 {
   DBUG_ENTER("LEX::add_unit_in_brackets");
-  bool distinct= nselect->master_unit()->union_distinct == nselect;
-  bool rc= add_select_to_union_list(distinct, nselect->linkage, 0);
-  if (rc)
+  SELECT_LEX_UNIT *unit= nselect->master_unit();
+  int old_nest_level= nselect->nest_level;
+  bool distinct= unit->union_distinct == nselect;
+  if (add_select_to_union_list(distinct, nselect->linkage, 0))
     DBUG_RETURN(TRUE);
-  SELECT_LEX* dummy_select= current_select;
-  dummy_select->automatic_brackets= TRUE;
-  dummy_select->linkage= nselect->linkage;
+
+  SELECT_LEX *dummy= current_select;
+  dummy->next= NULL;
+  if (make_select_in_brackets(current_select, nselect, FALSE))
+    DBUG_RETURN(TRUE);
+
+  if (!distinct && nselect->master_unit()->union_distinct)
+  {
+    // move distinct pointer
+    if (unit->union_distinct->master_unit() != unit)
+    {
+      unit->union_distinct->master_unit()->union_distinct= unit->union_distinct;
+      unit->union_distinct= NULL;
+    }
+  }
+  else if (distinct)
+    unit->union_distinct= NULL;// distinkt was moved by add_select_to_union_list
+
+  dummy->set_nest_level(old_nest_level);
+  DBUG_RETURN(FALSE);
+}
+
+
+bool LEX::make_select_in_brackets(SELECT_LEX* dummy_select,
+                                  SELECT_LEX *nselect, bool automatic)
+{
+  DBUG_ENTER("LEX::make_select_in_brackets");
+
+  int old_nest_level= nselect->nest_level;
+  dummy_select->automatic_brackets= automatic;
+  dummy_select->set_linkage(nselect->linkage);
+  current_select= dummy_select; // for mysql_new_select & Items
 
   /* stuff dummy SELECT * FROM (...) */
   Name_resolution_context *context= &dummy_select->context;
@@ -5014,12 +5215,19 @@ bool LEX::add_unit_in_brackets(SELECT_LEX *nselect)
     DBUG_RETURN(TRUE);
   (dummy_select->with_wild)++;
 
-  rc= mysql_new_select(this, 1, nselect);
-  nselect->linkage= DERIVED_TABLE_TYPE;
-  DBUG_ASSERT(nselect->outer_select() == dummy_select);
+  nselect->set_linkage(DERIVED_TABLE_TYPE);
+  SELECT_LEX *sl= nselect;
+  bool down= TRUE;
+  do{
+    SELECT_LEX *next= sl->next_select();
+    if (mysql_new_select(this, down, sl))
+      DBUG_RETURN(TRUE);
+    down= FALSE;
+    DBUG_ASSERT(sl->outer_select() == dummy_select);
+    sl= next;
+  } while (sl);
 
   current_select= dummy_select;
-  current_select->nest_level--;
 
   SELECT_LEX_UNIT *unit= nselect->master_unit();
   Table_ident *ti= new (thd->mem_root) Table_ident(unit);
@@ -5043,9 +5251,12 @@ bool LEX::add_unit_in_brackets(SELECT_LEX *nselect)
 
   derived_tables|= DERIVED_SUBQUERY;
 
+  if (dummy_select->set_nest_level(old_nest_level))
+    DBUG_RETURN(TRUE);
+
   current_select= nselect;
-  current_select->nest_level++;
-  DBUG_RETURN(rc);
+  //current_select->nest_level++;
+  DBUG_RETURN(FALSE);
 }
 
 
@@ -7062,6 +7273,33 @@ Item *st_select_lex::build_cond_for_grouping_fields(THD *thd, Item *cond,
 }
 
 
+bool st_select_lex::set_nest_level(int new_nest_level)
+{
+  DBUG_ENTER("st_select_lex::set_nest_level");
+  DBUG_PRINT("enter", ("select #%d %p nest level: %d",
+                       select_number, this, new_nest_level));
+  if (new_nest_level > (int) MAX_SELECT_NESTING)
+  {
+    my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT, MYF(0));
+    DBUG_RETURN(TRUE);
+  }
+  nest_level= new_nest_level;
+  new_nest_level++;
+  for (SELECT_LEX_UNIT *u= first_inner_unit(); u; u= u->next_unit())
+  {
+    for(SELECT_LEX *sl= u->first_select(); sl; sl= sl->next_select())
+    {
+      if (sl->set_nest_level(new_nest_level))
+        DBUG_RETURN(TRUE);
+    }
+    if (u->fake_select_lex &&
+        u->fake_select_lex->set_nest_level(new_nest_level))
+      DBUG_RETURN(TRUE);
+  }
+  DBUG_RETURN(FALSE);
+}
+
+
 int set_statement_var_if_exists(THD *thd, const char *var_name,
                                 size_t var_name_length, ulonglong value)
 {
@@ -7114,10 +7352,10 @@ bool LEX::create_or_alter_view_finalize(THD *thd, Table_ident *table_ident)
 {
   sql_command= SQLCOM_CREATE_VIEW;
   /* first table in list is target VIEW name */
-  if (!select_lex.add_table_to_list(thd, table_ident, NULL,
-                                    TL_OPTION_UPDATING,
-                                    TL_IGNORE,
-                                    MDL_EXCLUSIVE))
+  if (!first_select_lex()->add_table_to_list(thd, table_ident, NULL,
+                                             TL_OPTION_UPDATING,
+                                             TL_IGNORE,
+                                             MDL_EXCLUSIVE))
     return true;
   query_tables->open_strategy= TABLE_LIST::OPEN_STUB;
   return false;
@@ -7205,4 +7443,86 @@ Item *LEX::make_item_func_replace(THD *thd,
   return (thd->variables.sql_mode & MODE_ORACLE) ?
     new (thd->mem_root) Item_func_replace_oracle(thd, org, find, replace) :
     new (thd->mem_root) Item_func_replace(thd, org, find, replace);
+}
+
+
+bool st_select_lex_unit::automatic_op_precedence()
+{
+  bool high_prec= TRUE;
+
+  for(SELECT_LEX *start= first_select();
+      start->next_select();
+      start= start->next_select())
+  {
+    if (start->next_select()->linkage != INTERSECT_TYPE)
+      high_prec= FALSE;
+    else if (!high_prec)
+    {
+      SELECT_LEX *end= start->next_select()->next_select();
+      while (end && end->linkage == INTERSECT_TYPE)
+      {
+        end= end->next_select();
+      }
+      if (!(start= start->parent_lex->push_selects_down(start, end, TRUE)))
+        return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+void st_select_lex_unit::reset_distinct()
+{
+  union_distinct= NULL;
+  for(SELECT_LEX *sl= first_select()->next_select();
+      sl;
+      sl= sl->next_select())
+  {
+    if (sl->distinct)
+    {
+      union_distinct= sl;
+      return;
+    }
+  }
+}
+
+
+void st_select_lex_unit::fix_distinct(st_select_lex_unit *new_unit)
+{
+  if (union_distinct)
+  {
+    if (this != union_distinct->master_unit())
+    {
+      DBUG_ASSERT(new_unit == union_distinct->master_unit());
+      new_unit->union_distinct= union_distinct;
+      reset_distinct();
+    }
+    else
+      new_unit->reset_distinct();
+  }
+}
+
+
+bool Lex_order_limit_lock::set_to(SELECT_LEX *sel)
+{
+  if (sel->master_unit()->first_select()->next_select())
+    sel= sel->master_unit()->fake_select_lex;
+  if (lock.defined_lock && sel == sel->master_unit()->fake_select_lex)
+    return TRUE;
+  sel->explicit_limit= limit.explicit_limit;
+  sel->select_limit= limit.select_limit;
+  sel->offset_limit= limit.offset_limit;
+  if (order_list)
+  {
+    if (sel->linkage != GLOBAL_OPTIONS_TYPE &&
+        sel->olap != UNSPECIFIED_OLAP_TYPE &&
+        (sel->linkage != UNION_TYPE || sel->braces))
+    {
+      my_error(ER_WRONG_USAGE, MYF(0),
+          "CUBE/ROLLUP", "ORDER BY");
+      return TRUE;
+    }
+    sel->order_list= *(order_list);
+  }
+  /*TODO: lock */
+  return FALSE;
 }

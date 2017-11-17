@@ -3936,8 +3936,9 @@ bool get_lookup_field_values(THD *thd, COND *cond, TABLE_LIST *tables,
   case SQLCOM_SHOW_TABLE_STATUS:
   case SQLCOM_SHOW_TRIGGERS:
   case SQLCOM_SHOW_EVENTS:
-    thd->make_lex_string(&lookup_field_values->db_value, 
-                         lex->select_lex.db, strlen(lex->select_lex.db));
+    thd->make_lex_string(&lookup_field_values->db_value,
+                         lex->first_select_lex()->db,
+                         strlen(lex->first_select_lex()->db));
     if (wild)
     {
       thd->make_lex_string(&lookup_field_values->table_value, 
@@ -4330,10 +4331,10 @@ fill_schema_table_by_open(THD *thd, bool is_show_fields_or_keys,
     temporary LEX. The latter is required to correctly open views and
     produce table describing their structure.
   */
-  if (make_table_list(thd, &lex->select_lex, &db_name, &table_name))
+  if (make_table_list(thd, lex->first_select_lex(), &db_name, &table_name))
     goto end;
 
-  table_list= lex->select_lex.table_list.first;
+  table_list= lex->first_select_lex()->table_list.first;
 
   if (is_show_fields_or_keys)
   {
@@ -6380,7 +6381,7 @@ static int get_schema_views_record(THD *thd, TABLE_LIST *tables,
           & 'field_translation_end' are uninitialized is this
           case.
         */
-        List<Item> *fields= &tables->view->select_lex.item_list;
+        List<Item> *fields= &tables->view->first_select_lex()->item_list;
         List_iterator<Item> it(*fields);
         Item *item;
         Item_field *field;
@@ -7354,7 +7355,7 @@ int fill_open_tables(THD *thd, TABLE_LIST *tables, COND *cond)
   TABLE *table= tables->table;
   CHARSET_INFO *cs= system_charset_info;
   OPEN_TABLE_LIST *open_list;
-  if (!(open_list=list_open_tables(thd,thd->lex->select_lex.db, wild))
+  if (!(open_list=list_open_tables(thd, thd->lex->first_select_lex()->db, wild))
             && thd->is_fatal_error)
     DBUG_RETURN(1);
 
@@ -7805,7 +7806,7 @@ TABLE *create_schema_table(THD *thd, TABLE_LIST *table_list)
 static int make_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
 {
   ST_FIELD_INFO *field_info= schema_table->fields_info;
-  Name_resolution_context *context= &thd->lex->select_lex.context;
+  Name_resolution_context *context= &thd->lex->first_select_lex()->context;
   for (; field_info->field_name; field_info++)
   {
     if (field_info->old_name)
@@ -7865,14 +7866,14 @@ int make_table_names_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   char tmp[128];
   String buffer(tmp,sizeof(tmp), thd->charset());
   LEX *lex= thd->lex;
-  Name_resolution_context *context= &lex->select_lex.context;
+  Name_resolution_context *context= &lex->first_select_lex()->context;
   ST_FIELD_INFO *field_info= &schema_table->fields_info[2];
   LEX_CSTRING field_name= {field_info->field_name,
                            strlen(field_info->field_name) };
 
   buffer.length(0);
   buffer.append(field_info->old_name);
-  buffer.append(lex->select_lex.db);
+  buffer.append(lex->first_select_lex()->db);
   if (lex->wild && lex->wild->ptr())
   {
     buffer.append(STRING_WITH_LEN(" ("));
@@ -7905,7 +7906,7 @@ int make_columns_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   int fields_arr[]= {3, 15, 14, 6, 16, 5, 17, 18, 19, -1};
   int *field_num= fields_arr;
   ST_FIELD_INFO *field_info;
-  Name_resolution_context *context= &thd->lex->select_lex.context;
+  Name_resolution_context *context= &thd->lex->first_select_lex()->context;
 
   for (; *field_num >= 0; field_num++)
   {
@@ -7936,7 +7937,7 @@ int make_character_sets_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   int fields_arr[]= {0, 2, 1, 3, -1};
   int *field_num= fields_arr;
   ST_FIELD_INFO *field_info;
-  Name_resolution_context *context= &thd->lex->select_lex.context;
+  Name_resolution_context *context= &thd->lex->first_select_lex()->context;
 
   for (; *field_num >= 0; field_num++)
   {
@@ -7963,7 +7964,7 @@ int make_proc_old_format(THD *thd, ST_SCHEMA_TABLE *schema_table)
   int fields_arr[]= {2, 3, 4, 27, 24, 23, 22, 26, 28, 29, 30, -1};
   int *field_num= fields_arr;
   ST_FIELD_INFO *field_info;
-  Name_resolution_context *context= &thd->lex->select_lex.context;
+  Name_resolution_context *context= &thd->lex->first_select_lex()->context;
 
   for (; *field_num >= 0; field_num++)
   {

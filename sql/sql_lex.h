@@ -201,6 +201,7 @@ struct LEX_TYPE
   additional "partitions" column even if partitioning is not compiled in.
 */
 #define DESCRIBE_PARTITIONS	4
+#define DESCRIBE_EXTENDED2	8
 
 #ifdef MYSQL_SERVER
 
@@ -420,9 +421,9 @@ public:
   }
 
   void print(THD *thd, String *str);
-}; 
+};
 
-/* 
+/*
   The state of the lex parsing for selects 
    
    master and slaves are pointers to select_lex.
@@ -574,6 +575,7 @@ public:
   */
   uint8 uncacheable;
   enum sub_select_type linkage;
+  bool distinct;
   bool no_table_names_allowed; /* used for global order by */
 
   static void *operator new(size_t size, MEM_ROOT *mem_root) throw ()
@@ -612,6 +614,13 @@ public:
   }
   st_select_lex_node *insert_chain_before(st_select_lex_node **ptr_pos_to_insert,
                                           st_select_lex_node *end_chain_node);
+  void set_linkage(enum sub_select_type l)
+  {
+    DBUG_ENTER("st_select_lex_node::set_linkage");
+    DBUG_PRINT("info", ("node: %p  linkage: %d->%d", this, linkage, l));
+    linkage= l;
+    DBUG_VOID_RETURN;
+  }
   friend class st_select_lex_unit;
   friend bool mysql_new_select(LEX *lex, bool move_down, SELECT_LEX *sel);
   friend bool mysql_make_view(THD *thd, TABLE_SHARE *share, TABLE_LIST *table,
@@ -797,6 +806,10 @@ public:
   int save_union_explain(Explain_query *output);
   int save_union_explain_part2(Explain_query *output);
   unit_common_op common_op();
+
+  bool automatic_op_precedence();
+  void reset_distinct();
+  void fix_distinct(st_select_lex_unit *new_unit);
 };
 
 typedef class st_select_lex_unit SELECT_LEX_UNIT;
@@ -935,6 +948,7 @@ public:
   */
   SELECT_LEX_UNIT *nest_level_base;
   int nest_level;     /* nesting level of select */
+  uint braces_depth;  /* used for parsing and differ from above */
   Item_sum *inner_sum_func_list; /* list of sum func in nested selects */ 
   uint with_wild; /* item list contain '*' */
   bool braces;    /* SELECT ... UNION (SELECT ... ) <- this braces */
@@ -1247,6 +1261,26 @@ public:
   {
     DBUG_ASSERT(this != sel);
     select_n_where_fields+= sel->select_n_where_fields;
+  }
+  inline void set_linkage_and_distinct(enum sub_select_type l, bool d)
+  {
+    DBUG_ENTER("SELECT_LEX::set_linkage_and_distinct");
+    DBUG_PRINT("info", ("select: %p  distinct %d", this, d));
+    set_linkage(l);
+    DBUG_ASSERT(l == UNION_TYPE ||
+                l == INTERSECT_TYPE ||
+                l == EXCEPT_TYPE);
+    if (d && !master_unit()->union_distinct)
+      master_unit()->union_distinct= this;
+    distinct= d;
+    DBUG_VOID_RETURN;
+  }
+  bool set_nest_level(int new_nest_level);
+  void mark_select()
+  {
+    DBUG_ENTER("st_select_lex::mark_select()");
+    DBUG_PRINT("info", ("Select #%d", select_number));
+    DBUG_VOID_RETURN;
   }
 };
 typedef class st_select_lex SELECT_LEX;
@@ -2612,7 +2646,8 @@ class Query_arena_memroot;
 struct LEX: public Query_tables_list
 {
   SELECT_LEX_UNIT unit;                         /* most upper unit */
-  SELECT_LEX select_lex;                        /* first SELECT_LEX */
+  inline SELECT_LEX *first_select_lex() {return unit.first_select();}
+  SELECT_LEX builtin_select;
   /* current SELECT_LEX in parsing */
   SELECT_LEX *current_select;
   /* list of all SELECT_LEX */
@@ -2693,7 +2728,24 @@ private:
   bool sp_for_loop_condition(THD *thd, const Lex_for_loop_st &loop);
   bool sp_for_loop_increment(THD *thd, const Lex_for_loop_st &loop);
 
+  uint braces_depth;
+
 public:
+  inline void braces_start()
+  {
+    DBUG_ENTER("braces_start");
+    braces_depth++;
+    DBUG_PRINT("info",("now depth is %u <", braces_depth));
+    DBUG_VOID_RETURN;
+  }
+  inline void braces_end()
+  {
+    DBUG_ENTER("braces_end");
+    braces_depth--;
+    DBUG_PRINT("info",("now depth is %u >", braces_depth));
+    DBUG_VOID_RETURN;
+  }
+  inline uint get_braces_depth() { return braces_depth; }
   inline bool is_arena_for_set_stmt() {return arena_for_set_stmt != 0;}
   bool set_arena_for_set_stmt(Query_arena *backup);
   void reset_arena_for_set_stmt(Query_arena *backup);
@@ -2812,6 +2864,8 @@ public:
   enum enum_yes_no_unknown tx_chain, tx_release;
   bool safe_to_cache_query;
   bool subqueries, ignore;
+  bool next_is_main; // use "main" SELECT_LEX for nrxt allocation;
+  bool next_is_down; // use "main" SELECT_LEX for nrxt allocation;
   st_parsing_options parsing_options;
   Alter_info alter_info;
   /*
@@ -3008,7 +3062,7 @@ public:
       sl->uncacheable|= cause;
       un->uncacheable|= cause;
     }
-    select_lex.uncacheable|= cause;
+    first_select_lex()->uncacheable|= cause;
   }
   void set_trg_event_type_for_tables();
 
@@ -3054,12 +3108,28 @@ public:
 
   bool push_context(Name_resolution_context *context, MEM_ROOT *mem_root)
   {
-    return context_stack.push_front(context, mem_root);
+    DBUG_ENTER("LEX::push_context");
+    DBUG_PRINT("info", ("Context: %p Select: %p (%d)",
+                         context, context->select_lex,
+                         (context->select_lex ?
+                          context->select_lex->select_number:
+                          0)));
+    bool res= context_stack.push_front(context, mem_root);
+    DBUG_RETURN(res);
   }
 
-  void pop_context()
+  void pop_context(const char *str)
   {
-    context_stack.pop();
+    DBUG_ENTER("LEX::pop_context");
+    DBUG_PRINT("info", ("Context: '%s'", str));
+    Name_resolution_context *context= context_stack.pop();
+    DBUG_PRINT("info", ("Context: '%s' %p Select: %p (%d)",
+                         str,
+                         context, context->select_lex,
+                         (context->select_lex ?
+                          context->select_lex->select_number:
+                          0)));
+    DBUG_VOID_RETURN;
   }
 
   bool copy_db_to(const char **p_db, size_t *p_db_length) const;
@@ -3093,7 +3163,7 @@ public:
       on its top. So select_lex (as the first added) will be at the tail 
       of the list.
     */ 
-    if (&select_lex == all_selects_list && !sroutines.records)
+    if (first_select_lex() == all_selects_list && !sroutines.records)
     {
       DBUG_ASSERT(!all_selects_list->next_select_in_list());
       return TRUE;
@@ -3640,6 +3710,7 @@ public:
   bool if_exists() const { return create_info.if_exists(); }
 
   SELECT_LEX *exclude_last_select();
+  SELECT_LEX *exclude_not_first_select(SELECT_LEX *exclude);
   bool add_unit_in_brackets(SELECT_LEX *nselect);
   void check_automatic_up(enum sub_select_type type);
   bool create_or_alter_view_finalize(THD *thd, Table_ident *table_ident);
@@ -3648,9 +3719,13 @@ public:
   bool add_create_view(THD *thd, DDL_options_st ddl,
                        uint16 algorithm, enum_view_suid suid,
                        Table_ident *table_ident);
-
   bool add_grant_command(THD *thd, enum_sql_command sql_command_arg,
                          stored_procedure_type type_arg);
+  SELECT_LEX *push_selects_down(SELECT_LEX *exclude_start,
+                                SELECT_LEX *exclude_end, bool automatic);
+  bool make_select_in_brackets(SELECT_LEX* dummy_select,
+                               SELECT_LEX *nselect, bool automatic);
+  SELECT_LEX *shift_selects_down(SELECT_LEX *exclude_start);
 };
 
 

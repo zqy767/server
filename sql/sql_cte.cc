@@ -679,7 +679,7 @@ void With_element::move_anchors_ahead()
   st_select_lex *next_sl;
   st_select_lex *new_pos= spec->first_select();
   st_select_lex *last_sl;
-  new_pos->linkage= UNION_TYPE;
+  new_pos->set_linkage(UNION_TYPE);
   for (st_select_lex *sl= new_pos; sl; sl= next_sl)
   {
     next_sl= sl->next_select(); 
@@ -825,7 +825,7 @@ st_select_lex_unit *With_element::clone_parsed_spec(THD *thd,
   if (parser_state.init(thd, (char*) unparsed_spec.str, unparsed_spec.length))
     goto err;
   lex_start(thd);
-  with_select= &lex->select_lex;
+  with_select= lex->first_select_lex();
   with_select->select_number= ++thd->select_number;
   parse_status= parse_sql(thd, &parser_state, 0);
   if (parse_status)

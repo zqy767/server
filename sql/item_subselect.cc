@@ -219,7 +219,8 @@ Item_subselect::~Item_subselect()
   if (own_engine)
     delete engine;
   else
-    engine->cleanup();
+    if (engine)  // can be empty in case of EOM
+      engine->cleanup();
   engine= NULL;
   DBUG_VOID_RETURN;
 }

@@ -1319,7 +1319,7 @@ static int
 create_view_query(THD *thd, uchar** buf, size_t* buf_len)
 {
     LEX *lex= thd->lex;
-    SELECT_LEX *select_lex= &lex->select_lex;
+    SELECT_LEX *select_lex= lex->first_select_lex();
     TABLE_LIST *first_table= select_lex->table_list.first;
     TABLE_LIST *views = first_table;
     LEX_USER *definer;

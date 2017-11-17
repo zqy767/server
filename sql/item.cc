@@ -738,7 +738,13 @@ Item_ident::Item_ident(THD *thd, Name_resolution_context *context_arg,
    alias_name_used(FALSE), cached_field_index(NO_CACHED_FIELD_INDEX),
    cached_table(0), depended_from(0), can_be_depended(TRUE)
 {
+  DBUG_ENTER("Item_ident::Item_ident");
+  DBUG_PRINT("XXX", ("Name: %s  cur sel: %p (%d)", field_name.str,
+                     thd->lex->current_select,
+                     (thd->lex->current_select ?
+                      thd->lex->current_select->select_number : 0)));
   name= *field_name_arg;
+  DBUG_VOID_RETURN;
 }
 
 
@@ -747,13 +753,17 @@ Item_ident::Item_ident(THD *thd, TABLE_LIST *view_arg,
   :Item_result_field(thd), orig_db_name(NullS),
    orig_table_name(view_arg->table_name),
    orig_field_name(*field_name_arg),
-   context(&view_arg->view->select_lex.context),
+   /* TODO: suspicious use of first_select_lex */
+   context(&view_arg->view->first_select_lex()->context),
    db_name(NullS), table_name(view_arg->alias),
    field_name(*field_name_arg),
    alias_name_used(FALSE), cached_field_index(NO_CACHED_FIELD_INDEX),
    cached_table(NULL), depended_from(NULL), can_be_depended(TRUE)
 {
+  DBUG_ENTER("Item_ident::Item_ident");
+  DBUG_PRINT("XXX", ("Name: %s", field_name.str));
   name= *field_name_arg;
+  DBUG_VOID_RETURN;
 }
 
 
@@ -775,7 +785,11 @@ Item_ident::Item_ident(THD *thd, Item_ident *item)
    cached_table(item->cached_table),
    depended_from(item->depended_from),
    can_be_depended(item->can_be_depended)
-{}
+{
+  DBUG_ENTER("Item_ident::Item_ident");
+  DBUG_PRINT("XXX", ("Name: %s", field_name.str));
+  DBUG_VOID_RETURN;
+}
 
 void Item_ident::cleanup()
 {
