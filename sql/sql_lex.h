@@ -433,7 +433,7 @@ public:
    unit is container of either
      - One SELECT
      - UNION of selects
-   select_lex and unit are both inherited form select_lex_node
+   select_lex and unit are both inherited form st_select_lex_node
    neighbors are two select_lex or units on the same level
 
    All select describing structures linked with following pointers:
@@ -596,6 +596,13 @@ public:
   void include_down(st_select_lex_node *upper);
   void add_slave(st_select_lex_node *slave_arg);
   void include_neighbour(st_select_lex_node *before);
+  void link_neighbour(st_select_lex_node *neighbour)
+  {
+    DBUG_ASSERT(next == NULL);
+    DBUG_ASSERT(neighbour != NULL);
+    next= neighbour;
+    neighbour->prev= &next;
+  }
   void include_standalone(st_select_lex_node *sel, st_select_lex_node **ref);
   void include_global(st_select_lex_node **plink);
   void exclude();
@@ -621,6 +628,15 @@ public:
     linkage= l;
     DBUG_VOID_RETURN;
   }
+  /*
+    This method created for reiniting LEX in mysql_admin_table() and can be
+    used only if you are going remove all SELECT_LEX & units except belonger
+    to LEX (LEX::unit & LEX::select, for other purposes there are
+    SELECT_LEX_UNIT::exclude_level & SELECT_LEX_UNIT::exclude_tree.
+
+    It is also used in parsing to detach builtin select.
+  */
+  void cut_subtree() { slave= 0; }
   friend class st_select_lex_unit;
   friend bool mysql_new_select(LEX *lex, bool move_down, SELECT_LEX *sel);
   friend bool mysql_make_view(THD *thd, TABLE_SHARE *share, TABLE_LIST *table,
@@ -630,6 +646,8 @@ public:
   friend bool mysql_derived_merge(THD *thd, LEX *lex,
                                   TABLE_LIST *orig_table_list);
   friend bool TABLE_LIST::init_derived(THD *thd, bool init_view);
+
+  friend class st_select_lex;
 private:
   void fast_exclude();
 };
@@ -810,6 +828,12 @@ public:
   bool automatic_op_precedence();
   void reset_distinct();
   void fix_distinct(st_select_lex_unit *new_unit);
+
+  void rerister_selects_chain(SELECT_LEX *sel);
+
+  bool set_nest_level(int new_nest_level);
+
+  friend class st_select_lex;
 };
 
 typedef class st_select_lex_unit SELECT_LEX_UNIT;
@@ -1282,6 +1306,10 @@ public:
     DBUG_PRINT("info", ("Select #%d", select_number));
     DBUG_VOID_RETURN;
   }
+  void rerister_unit(SELECT_LEX_UNIT *unit,
+                     Name_resolution_context *outer_context);
+  SELECT_LEX_UNIT *attach_selects_chain(SELECT_LEX *sel,
+                                        Name_resolution_context *context);
 };
 typedef class st_select_lex SELECT_LEX;
 
@@ -2771,6 +2799,7 @@ public:
     required a local context, the parser pops the top-most context.
   */
   List<Name_resolution_context> context_stack;
+  List<SELECT_LEX> select_stack;
 
   SQL_I_List<ORDER> proc_list;
   SQL_I_List<TABLE_LIST> auxiliary_table_list, save_list;
@@ -3056,13 +3085,16 @@ public:
     SELECT_LEX *sl;
     SELECT_LEX_UNIT *un;
     for (sl= current_select, un= sl->master_unit();
-	 un != &unit;
-	 sl= sl->outer_select(), un= sl->master_unit())
+	 un && un != &unit;
+	 sl= sl->outer_select(), un= (sl ? sl->master_unit() : NULL))
     {
       sl->uncacheable|= cause;
       un->uncacheable|= cause;
     }
-    first_select_lex()->uncacheable|= cause;
+    if (sl)
+      sl->uncacheable|= cause;
+    if (first_select_lex())
+      first_select_lex()->uncacheable|= cause;
   }
   void set_trg_event_type_for_tables();
 
@@ -3130,6 +3162,35 @@ public:
                           context->select_lex->select_number:
                           0)));
     DBUG_VOID_RETURN;
+  }
+
+  bool push_select(SELECT_LEX *select_lex, MEM_ROOT *mem_root)
+  {
+    DBUG_ENTER("LEX::push_select");
+    DBUG_PRINT("info", ("Top Select was %p (%d) pushed: %p (%d)",
+                         select_stack.head(),
+                         (select_stack.head() ?
+                          select_stack.head()->select_number:
+                          0),
+                         select_lex, select_lex->select_number));
+    bool res= select_stack.push_front(select_lex, mem_root);
+    current_select= select_lex;
+    DBUG_RETURN(res);
+  }
+
+  SELECT_LEX *pop_select()
+  {
+    DBUG_ENTER("LEX::pop_select");
+    SELECT_LEX *select_lex= select_stack.pop();
+    DBUG_ASSERT(select_lex);
+    DBUG_PRINT("info", ("Top Select is %p (%d) poped: %p (%d)",
+                         select_stack.head(),
+                         (select_stack.head() ?
+                          select_stack.head()->select_number:
+                          0),
+                         select_lex, select_lex->select_number));
+    current_select= select_stack.head();
+    DBUG_RETURN(select_lex);
   }
 
   bool copy_db_to(const char **p_db, size_t *p_db_length) const;
@@ -3726,6 +3787,14 @@ public:
   bool make_select_in_brackets(SELECT_LEX* dummy_select,
                                SELECT_LEX *nselect, bool automatic);
   SELECT_LEX *shift_selects_down(SELECT_LEX *exclude_start);
+
+  SELECT_LEX_UNIT *alloc_unit();
+  SELECT_LEX *alloc_select(bool is_select);
+  SELECT_LEX *link_selects_chain_down(SELECT_LEX *sel);
+  bool main_select_push();
+  void main_select_cut();
+  bool new_main_select_anker(SELECT_LEX *sel);
+  bool insert_select_hack(SELECT_LEX *sel);
 };
 
 

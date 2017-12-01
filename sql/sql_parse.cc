@@ -7574,23 +7574,9 @@ mysql_new_select(LEX *lex, bool move_down, SELECT_LEX *select_lex)
   bool new_select= select_lex == NULL;
   int old_nest_level= lex->current_select->nest_level;
   DBUG_ENTER("mysql_new_select");
-  if (lex->next_is_down)
-  {
-    DBUG_ASSERT(move_down == FALSE);
-    move_down= TRUE;
-    lex->next_is_down= FALSE;
-  }
 
   if (new_select)
   {
-    if (lex->next_is_main)
-    {
-      DBUG_ASSERT(move_down == FALSE);
-      lex->next_is_main= FALSE;
-      lex->current_select= &lex->builtin_select;
-      lex->current_select->braces_depth= lex->get_braces_depth();
-      DBUG_RETURN(FALSE);
-    }
     if (!(select_lex= new (thd->mem_root) SELECT_LEX()))
       DBUG_RETURN(1);
     select_lex->select_number= ++thd->select_number;
@@ -7608,14 +7594,10 @@ mysql_new_select(LEX *lex, bool move_down, SELECT_LEX *select_lex)
     SELECT_LEX_UNIT *unit;
     lex->subqueries= TRUE;
     /* first select_lex of subselect or derived table */
-    if (!(unit= new (thd->mem_root) SELECT_LEX_UNIT()))
+    if (!(unit= lex->alloc_unit()))
       DBUG_RETURN(1);
 
-    unit->init_query();
-    unit->thd= thd;
     unit->include_down(lex->current_select);
-    unit->link_next= 0;
-    unit->link_prev= 0;
     unit->return_to= lex->current_select;
     select_lex->include_down(unit);
     /*
@@ -7888,6 +7870,7 @@ void mysql_parse(THD *thd, char *rawbuf, uint length,
     LEX *lex= thd->lex;
 
     bool err= parse_sql(thd, parser_state, NULL, true);
+    lex->current_select= lex->first_select_lex();
 
     if (!err)
     {
@@ -8084,6 +8067,9 @@ TABLE_LIST *st_select_lex::add_table_to_list(THD *thd,
   const char *alias_str;
   LEX *lex= thd->lex;
   DBUG_ENTER("add_table_to_list");
+  DBUG_PRINT("enter", ("Table '%s'  Select %p (%u)",
+                        (alias ? alias->str : table->table.str),
+                        this, select_number));
 
   if (!table)
     DBUG_RETURN(0);				// End of memory
@@ -8177,7 +8163,7 @@ TABLE_LIST *st_select_lex::add_table_to_list(THD *thd,
     ptr->schema_table_name= ptr->table_name;
     ptr->schema_table= schema_table;
   }
-  ptr->select_lex=  lex->current_select;
+  ptr->select_lex= this;
   /*
     We can't cache internal temporary tables between prepares as the
     table may be deleted before next exection.

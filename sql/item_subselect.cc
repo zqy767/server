@@ -123,13 +123,6 @@ void Item_subselect::init(st_select_lex *select_lex,
     else
       engine= new subselect_single_select_engine(select_lex, result, this);
   }
-  {
-    SELECT_LEX *upper= unit->outer_select();
-    if (upper->parsing_place == IN_HAVING)
-      upper->subquery_in_having= 1;
-    /* The subquery is an expression cache candidate */
-    upper->expr_cache_may_be_used[upper->parsing_place]= TRUE;
-  }
   DBUG_PRINT("info", ("engine: 0x%lx", (ulong)engine));
   DBUG_VOID_RETURN;
 }
@@ -243,6 +236,14 @@ bool Item_subselect::fix_fields(THD *thd_param, Item **ref)
   thd= thd_param;
 
   DBUG_ASSERT(unit->thd == thd);
+
+  {
+    SELECT_LEX *upper= unit->outer_select();
+    if (upper->parsing_place == IN_HAVING)
+      upper->subquery_in_having= 1;
+    /* The subquery is an expression cache candidate */
+    upper->expr_cache_may_be_used[upper->parsing_place]= TRUE;
+  }
 
   status_var_increment(thd_param->status_var.feature_subquery);
 
