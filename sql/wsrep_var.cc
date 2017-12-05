@@ -42,11 +42,17 @@ int wsrep_init_vars()
   return 0;
 }
 
+extern ulong innodb_lock_schedule_algorithm;
+
 bool wsrep_on_update (sys_var *self, THD* thd, enum_var_type var_type)
 {
   if (var_type == OPT_GLOBAL) {
     // FIXME: this variable probably should be changed only per session
     thd->variables.wsrep_on = global_system_variables.wsrep_on;
+  }
+
+  if (thd->variables.wsrep_on) {
+      innodb_lock_schedule_algorithm = 0;
   }
   return false;
 }

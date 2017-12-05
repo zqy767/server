@@ -3862,6 +3862,16 @@ innobase_init(
 		goto error;
 	}
 
+#ifdef WITH_WSREP
+	/* Currently, Galera does not support VATS lock schedule algorithm. */
+	if (innodb_lock_schedule_algorithm == INNODB_LOCK_SCHEDULE_ALGORITHM_VATS
+	    && global_system_variables.wsrep_on) {
+		ib::info() << "In Galera environment Variance-Aware-Transaction-Sheduling Algorithm"
+			   << " is not supported. Falling back to First-Come-First-Served order. ";
+		innodb_lock_schedule_algorithm = INNODB_LOCK_SCHEDULE_ALGORITHM_FCFS;
+	}
+#endif /* WITH_WSREP */
+
 #ifndef HAVE_LZ4
 	if (innodb_compression_algorithm == PAGE_LZ4_ALGORITHM) {
 		sql_print_error("InnoDB: innodb_compression_algorithm = %lu unsupported.\n"
@@ -5351,12 +5361,14 @@ innobase_kill_query(
 				wsrep_thd_is_BF(current_thd, FALSE));
 		}
 
-		if (!wsrep_thd_is_BF(trx->mysql_thd, FALSE)) {
+		if (!wsrep_thd_is_BF(trx->mysql_thd, FALSE) && trx->abort_type != TRX_WSREP_ABORT) {
+			ut_ad(!lock_mutex_own());
 			lock_mutex_enter();
 			lock_mutex_taken = true;
 		}
 
 		if (trx->abort_type != TRX_WSREP_ABORT) {
+			ut_ad(!trx_mutex_own(trx));
 			trx_mutex_enter(trx);
 			trx_mutex_taken = true;
 		}
