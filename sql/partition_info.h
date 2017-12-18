@@ -294,7 +294,8 @@ public:
 
   partition_info *get_clone(THD *thd);
   bool set_named_partition_bitmap(const char *part_name, uint length);
-  bool set_partition_bitmaps(TABLE_LIST *table_list);
+  bool set_partition_bitmaps(List<String> *partition_names);
+  bool set_partition_bitmaps_from_table(TABLE_LIST *table_list);
   /* Answers the question if subpartitioning is used for a certain table */
   bool is_sub_partitioned()
   {
@@ -378,7 +379,7 @@ private:
                                        uint start_no);
   char *create_default_subpartition_name(uint subpart_no,
                                          const char *part_name);
-  bool prune_partition_bitmaps(TABLE_LIST *table_list);
+  bool prune_partition_bitmaps(List<String> *partition_names);
   bool add_named_partition(const char *part_name, uint length);
   bool is_field_in_part_expr(List<Item> &fields);
   bool is_full_part_expr_in_fields(List<Item> &fields);

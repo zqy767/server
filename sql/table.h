@@ -2142,10 +2142,8 @@ struct TABLE_LIST
 
   MDL_request mdl_request;
 
-#ifdef WITH_PARTITION_STORAGE_ENGINE
   /* List to carry partition names from PARTITION (...) clause in statement */
   List<String> *partition_names;
-#endif /* WITH_PARTITION_STORAGE_ENGINE */
 
   void calc_md5(char *buffer);
   int view_check_option(THD *thd, bool ignore_failure);
@@ -2637,7 +2635,8 @@ void init_mdl_requests(TABLE_LIST *table_list);
 enum open_frm_error open_table_from_share(THD *thd, TABLE_SHARE *share,
                        const char *alias, uint db_stat, uint prgflag,
                        uint ha_open_flags, TABLE *outparam,
-                       bool is_create_table);
+                       bool is_create_table,
+                       List<String> *partitions_to_open= NULL);
 bool unpack_vcol_info_from_frm(THD *thd, MEM_ROOT *mem_root,
                                TABLE *table, Field *field,
                                LEX_STRING *vcol_expr, bool *error_reported);

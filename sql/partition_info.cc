@@ -199,16 +199,16 @@ bool partition_info::set_named_partition_bitmap(const char *part_name,
   Prune away partitions not mentioned in the PARTITION () clause,
   if used.
 
-    @param table_list  Table list pointing to table to prune.
+    @param partition_names  list of names of partitions.
 
   @return Operation status
     @retval true  Failure
     @retval false Success
 */
-bool partition_info::prune_partition_bitmaps(TABLE_LIST *table_list)
+bool partition_info::prune_partition_bitmaps(List<String> *partition_names)
 {
-  List_iterator<String> partition_names_it(*(table_list->partition_names));
-  uint num_names= table_list->partition_names->elements;
+  List_iterator<String> partition_names_it(*(partition_names));
+  uint num_names= partition_names->elements;
   uint i= 0;
   DBUG_ENTER("partition_info::prune_partition_bitmaps");
 
@@ -238,8 +238,7 @@ bool partition_info::prune_partition_bitmaps(TABLE_LIST *table_list)
 /**
   Set read/lock_partitions bitmap over non pruned partitions
 
-  @param table_list   Possible TABLE_LIST which can contain
-                      list of partition names to query
+  @param partition_names   list of partition names to query
 
   @return Operation status
     @retval FALSE  OK
@@ -249,7 +248,7 @@ bool partition_info::prune_partition_bitmaps(TABLE_LIST *table_list)
   @note OK to call multiple times without the need for free_bitmaps.
 */
 
-bool partition_info::set_partition_bitmaps(TABLE_LIST *table_list)
+bool partition_info::set_partition_bitmaps(List<String> *partition_names)
 {
   DBUG_ENTER("partition_info::set_partition_bitmaps");
 
@@ -259,16 +258,15 @@ bool partition_info::set_partition_bitmaps(TABLE_LIST *table_list)
   if (!bitmaps_are_initialized)
     DBUG_RETURN(TRUE);
 
-  if (table_list &&
-      table_list->partition_names &&
-      table_list->partition_names->elements)
+  if (partition_names &&
+      partition_names->elements)
   {
     if (table->s->db_type()->partition_flags() & HA_USE_AUTO_PARTITION)
     {
         my_error(ER_PARTITION_CLAUSE_ON_NONPARTITIONED, MYF(0));
         DBUG_RETURN(true);
     }
-    if (prune_partition_bitmaps(table_list))
+    if (prune_partition_bitmaps(partition_names))
       DBUG_RETURN(TRUE);
   }
   else
@@ -279,6 +277,27 @@ bool partition_info::set_partition_bitmaps(TABLE_LIST *table_list)
   bitmap_copy(&lock_partitions, &read_partitions);
   DBUG_ASSERT(bitmap_get_first_set(&lock_partitions) != MY_BIT_NONE);
   DBUG_RETURN(FALSE);
+}
+
+
+/**
+  Set read/lock_partitions bitmap over non pruned partitions
+
+  @param table_list   Possible TABLE_LIST which can contain
+                      list of partition names to query
+
+  @return Operation status
+    @retval FALSE  OK
+    @retval TRUE   Failed to allocate memory for bitmap or list of partitions
+                   did not match
+
+  @note OK to call multiple times without the need for free_bitmaps.
+*/
+bool partition_info::set_partition_bitmaps_from_table(TABLE_LIST *table_list)
+{
+  List<String> *partition_names= table_list ?
+                                   NULL : table_list->partition_names;
+  return set_partition_bitmaps(partition_names);
 }
 
 

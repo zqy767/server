@@ -2737,7 +2737,8 @@ public:
   }
   /* ha_ methods: pubilc wrappers for private virtual API */
   
-  int ha_open(TABLE *table, const char *name, int mode, uint test_if_locked);
+  int ha_open(TABLE *table, const char *name, int mode, uint test_if_locked,
+              List<String> *partitions_to_open=NULL);
   int ha_index_init(uint idx, bool sorted)
   {
     DBUG_EXECUTE_IF("ha_index_init_fail", return HA_ERR_TABLE_DEF_CHANGED;);
@@ -3197,6 +3198,9 @@ public:
   virtual int info(uint)=0; // see my_base.h for full description
   virtual void get_dynamic_partition_info(PARTITION_STATS *stat_info,
                                           uint part_id);
+  virtual void set_partitions_to_open(List<String> *partition_names) {}
+  virtual int change_partitions_to_open(List<String> *partition_names)
+  { return 0; }
   virtual int extra(enum ha_extra_function operation)
   { return 0; }
   virtual int extra_opt(enum ha_extra_function operation, ulong cache_size)

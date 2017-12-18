@@ -2483,7 +2483,8 @@ PSI_table_share *handler::ha_table_share_psi() const
     Don't wait for locks if not HA_OPEN_WAIT_IF_LOCKED is set
 */
 int handler::ha_open(TABLE *table_arg, const char *name, int mode,
-                     uint test_if_locked)
+                     uint test_if_locked,
+                     List<String> *partitions_to_open)
 {
   int error;
   DBUG_ENTER("handler::ha_open");
@@ -2497,6 +2498,8 @@ int handler::ha_open(TABLE *table_arg, const char *name, int mode,
   DBUG_ASSERT(m_lock_type == F_UNLCK);
   DBUG_PRINT("info", ("old m_lock_type: %d F_UNLCK %d", m_lock_type, F_UNLCK));
   DBUG_ASSERT(alloc_root_inited(&table->mem_root));
+
+  set_partitions_to_open(partitions_to_open);
 
   if ((error=open(name,mode,test_if_locked)))
   {
