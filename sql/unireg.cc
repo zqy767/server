@@ -386,7 +386,8 @@ int rea_create_table(THD *thd, LEX_CUSTRING *frm,
   if (thd->variables.keep_files_on_create)
     create_info->options|= HA_CREATE_KEEP_FILES;
 
-  if (file->ha_create_partitioning_metadata(path, NULL, CHF_CREATE_FLAG))
+  if (file->ha_create_partitioning_metadata(path, NULL,
+    CHF_CREATE_FLAG, !create_info->tmp_table()))
     goto err_part;
 
   if (!no_ha_create_table)

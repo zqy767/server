@@ -3989,7 +3989,8 @@ handler::mark_trx_read_write()
     DBUG_ASSERT(has_transactions());
     /*
       table_share can be NULL in ha_delete_table(). See implementation
-      of standalone function ha_delete_table() in sql_base.cc.
+      of standalone function ha_delete_table() in sql_base.cc. It can
+      also be NULL during table creation.
     */
     if (table_share == NULL || table_share->tmp_table == NO_TMP_TABLE)
       ha_info->set_trx_read_write();
@@ -4374,7 +4375,8 @@ handler::ha_create(const char *name, TABLE *form, HA_CREATE_INFO *info_arg)
 int
 handler::ha_create_partitioning_metadata(const char *name,
                                          const char *old_name,
-                                         int action_flag)
+                                         int action_flag,
+                                         bool should_mark_rw)
 {
   /*
     Normally this is done when unlocked, but in fast_alter_partition_table,
@@ -4382,8 +4384,11 @@ handler::ha_create_partitioning_metadata(const char *name,
     partitions.
   */
   DBUG_ASSERT(m_lock_type == F_UNLCK ||
-              (!old_name && strcmp(name, table_share->path.str)));
-  mark_trx_read_write();
+              (!old_name && table_share && strcmp(name, table_share->path.str)));
+  if (should_mark_rw)
+  {
+    mark_trx_read_write();
+  }
 
   return create_partitioning_metadata(name, old_name, action_flag);
 }
