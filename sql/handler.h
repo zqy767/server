@@ -2923,7 +2923,7 @@ public:
   int ha_create(const char *name, TABLE *form, HA_CREATE_INFO *info);
 
   int ha_create_partitioning_metadata(const char *name, const char *old_name,
-                                      int action_flag);
+                                      int action_flag, bool should_mark_rw = true);
 
   int ha_change_partitions(HA_CREATE_INFO *create_info,
                            const char *path,
