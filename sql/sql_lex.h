@@ -1294,7 +1294,7 @@ public:
     DBUG_ASSERT(l == UNION_TYPE ||
                 l == INTERSECT_TYPE ||
                 l == EXCEPT_TYPE);
-    if (d && !master_unit()->union_distinct)
+    if (d && master_unit() && !master_unit()->union_distinct)
       master_unit()->union_distinct= this;
     distinct= d;
     DBUG_VOID_RETURN;
@@ -3189,8 +3189,28 @@ public:
                           select_stack.head()->select_number:
                           0),
                          select_lex, select_lex->select_number));
-    current_select= select_stack.head();
+    if ((current_select= select_stack.head()) == NULL)
+    {
+      current_select= first_select_lex();
+      DBUG_PRINT("info", ("Top Select is empty, current set to main"));
+    }
     DBUG_RETURN(select_lex);
+  }
+
+  bool push_select_and_context(SELECT_LEX *sel, MEM_ROOT *mem_root)
+  {
+    DBUG_ENTER("LEX::push_select_and_context");
+    bool res= (push_select(sel, mem_root) ||
+               push_context(&sel->context, mem_root));
+    DBUG_RETURN(res);
+  }
+
+  SELECT_LEX *pop_select_and_context()
+  {
+    DBUG_ENTER("LEX::pop_select_and_context");
+    pop_context("Tail of select");
+    SELECT_LEX *res= pop_select();
+    DBUG_RETURN(res);
   }
 
   bool copy_db_to(const char **p_db, size_t *p_db_length) const;

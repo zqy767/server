@@ -5081,6 +5081,13 @@ SELECT_LEX::attach_selects_chain(SELECT_LEX *sel,
 
   unit->rerister_selects_chain(sel);
   rerister_unit(unit, context);
+  if (sel->next_select())
+  {
+    unit->reset_distinct();
+    DBUG_ASSERT(!unit->fake_select_lex);
+    if (unit->add_fake_select_lex(parent_lex->thd))
+      DBUG_RETURN(NULL);
+  }
 
   DBUG_RETURN(unit);
 }

@@ -4930,6 +4930,7 @@ create_select_query_expression:
         select_expr select_dedicated_tail
         {
             LEX *lex= Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             if ($2->set_nest_level(1))
               MYSQL_YYABORT;
             lex->current_select= lex->first_select_lex();
@@ -6410,6 +6411,7 @@ parenthesized_expr:
           select_expr select_dedicated_tail
           {
             LEX *lex= Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             if (!lex->expr_allows_subselect ||
                lex->sql_command == (int)SQLCOM_PURGE)
             {
@@ -8688,9 +8690,10 @@ select_new:
           select_expr
           {
             LEX *lex= Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             if (lex->new_main_select_anker($3))
               MYSQL_YYABORT;
-            lex->current_select= lex->first_select_lex();
+            //lex->current_select= lex->first_select_lex();
           }
           select_new_global_tail
           {
@@ -8708,13 +8711,16 @@ select_new:
 select_expr:
           select_term unit_type_decl select_expr 
           {
+            Lex->pop_select_and_context(); //push at the end of select_expr
             DBUG_ASSERT($1->next_select() == NULL);
             $1->link_neighbour($3);
             $3->set_linkage_and_distinct($2.unit_type, $2.distinct);
             //Lex->current_select= $$= $1;
+            Lex->push_select_and_context($1, thd->mem_root);
           }
         | select_term
           {
+            Lex->push_select_and_context($1, thd->mem_root);
             //Lex->current_select=$$= $1;
           }
         ;
@@ -8728,6 +8734,7 @@ select_term:
           {
             SELECT_LEX *sel= $2;
             LEX *lex= Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             if (sel->next_select())
             {
               if (!(sel= lex->link_selects_chain_down(sel)))
@@ -8964,11 +8971,11 @@ select_part3_union_not_ready:
 
 select_new_global_tail:
           /* empty */
-        | procedure_clause
-        | union_order_or_limit opt_select_lock_type procedure_clause
-        | union_order_or_limit opt_select_lock_type
-        | into opt_table_expression opt_order_clause opt_limit_clause opt_select_lock_type
-        | union_order_or_limit opt_select_lock_type into
+        | global_select_on procedure_clause global_select_off
+        | global_select_on global_order_or_limit opt_select_lock_type procedure_clause global_select_off
+        | global_select_on global_order_or_limit opt_select_lock_type global_select_off
+        | global_select_on into opt_table_expression opt_order_clause opt_limit_clause opt_select_lock_type global_select_off
+        | global_select_on global_order_or_limit opt_select_lock_type into global_select_off
 
 select_dedicated_tail:
           /* empty */
@@ -11552,6 +11559,7 @@ table_primary_derived:
           ')' opt_table_alias
           {
             LEX *lex=Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             lex->derived_tables|= DERIVED_SUBQUERY;
             $2->linkage= DERIVED_TABLE_TYPE;
             SELECT_LEX *sel= lex->select_stack.head();
@@ -11650,6 +11658,7 @@ table_primary_derived:
           ')' opt_table_alias
           {
             LEX *lex=Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             lex->derived_tables|= DERIVED_SUBQUERY;
             $3->linkage= DERIVED_TABLE_TYPE;
             SELECT_LEX *sel= lex->select_stack.head();
@@ -16853,6 +16862,7 @@ union_list_view:
           }
         ;
 */
+/*
 union_order_or_limit:
           {
             LEX *lex= thd->lex;
@@ -16879,6 +16889,52 @@ union_order_or_limit:
             thd->where= "";
           }
         ;
+*/
+
+global_select_on:
+          {
+            LEX *lex= thd->lex;
+            SELECT_LEX *sel= lex->first_select_lex();
+            SELECT_LEX_UNIT *unit= sel->master_unit();
+            SELECT_LEX *fake= unit->fake_select_lex;
+            if (fake)
+            {
+              fake->no_table_names_allowed= 1;
+              lex->push_select_and_context(fake, thd->mem_root);
+            }
+            else if (sel->braces)
+            {
+              thd->parse_error(ER_SYNTAX_ERROR);
+              MYSQL_YYABORT;
+            }
+            else
+            {
+              lex->push_select_and_context(sel, thd->mem_root);
+            }
+            DBUG_ASSERT(lex->current_select->linkage != GLOBAL_OPTIONS_TYPE);
+          }
+      ; 
+
+global_select_off:
+          {
+            SELECT_LEX *sel;
+            if ((sel= Lex->pop_select_and_context()))
+              sel->no_table_names_allowed= 0;
+
+          }
+        ;
+
+
+global_order_or_limit:
+          {
+            thd->where= "global ORDER clause";
+          }
+          order_or_limit
+          {
+            thd->where= "";
+          }
+        ;
+
 
 order_or_limit_new:
           order_clause_new opt_limit_clause_new
@@ -16968,6 +17024,7 @@ subselect:
           select_dedicated_tail
           {
             LEX *lex=Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             if (!lex->expr_allows_subselect ||
                lex->sql_command == (int)SQLCOM_PURGE)
             {
@@ -16983,7 +17040,7 @@ subselect:
               MYSQL_YYABORT;
             if ($1)
               $2->set_with_clause($1);
-            $$= sel;
+            $$= $2;
             for (SELECT_LEX *child= $2; child; child= child->next_select())
             {
               /*
@@ -17187,6 +17244,7 @@ view_select:
           view_check_option
           {
             LEX *lex=Lex;
+            lex->pop_select_and_context(); //push at the end of select_expr
             if ($3->set_nest_level(1))
               MYSQL_YYABORT;
             lex->unit.cut_subtree();

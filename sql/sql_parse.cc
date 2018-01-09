@@ -7870,7 +7870,6 @@ void mysql_parse(THD *thd, char *rawbuf, uint length,
     LEX *lex= thd->lex;
 
     bool err= parse_sql(thd, parser_state, NULL, true);
-    lex->current_select= lex->first_select_lex();
 
     if (!err)
     {
@@ -9955,6 +9954,7 @@ bool parse_sql(THD *thd, Parser_state *parser_state,
          ((thd->variables.sql_mode & MODE_ORACLE) ?
           ORAparse(thd) :
           MYSQLparse(thd)) != 0;
+  thd->lex->current_select= thd->lex->first_select_lex();
 
   /*
     Check that if MYSQLparse() failed either thd->is_error() is set, or an
