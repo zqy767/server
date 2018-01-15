@@ -1197,8 +1197,10 @@ buf_page_print(const byte* read_buf, const page_size_t& page_size)
 	ib::info() << "Page dump in ascii and hex ("
 		<< page_size.physical() << " bytes):";
 
+#ifdef UNIV_BUF_DEBUG
 	ut_print_buf(stderr, read_buf, page_size.physical());
 	fputs("\nInnoDB: End of page dump\n", stderr);
+#endif
 
 	if (page_size.is_compressed()) {
 		/* Print compressed page. */

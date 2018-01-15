@@ -666,7 +666,7 @@ fil_verify_compression_checksum(
 
 	if (checksum != cchecksum) {
 		ulint comp_method = mach_read_from_2(page+FIL_PAGE_TYPE) == FIL_PAGE_PAGE_COMPRESSED
-			? mach_read_from_8(page+FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION)
+			? static_cast<ulint>(mach_read_from_8(page+FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION))
 			: mach_read_from_2(page+FIL_PAGE_DATA+FIL_PAGE_COMPRESSED_SIZE);
 
 #ifdef UNIV_INNOCHECKSUM
