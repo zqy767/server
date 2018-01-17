@@ -46,6 +46,7 @@ alter table t5_le discard tablespace;
 -- copy_file $MYSQLTEST_VARDIR/tmp/innodb-checksum/t4_le.ibd $DATADIR/test/t4_le.ibd
 -- copy_file $MYSQLTEST_VARDIR/tmp/innodb-checksum/t5_le.ibd $DATADIR/test/t5_le.ibd
 
+--disable_warnings
 alter table t0_be import tablespace;
 alter table t1_be import tablespace;
 alter table t2_be import tablespace;
@@ -59,6 +60,7 @@ alter table t2_le import tablespace;
 alter table t3_le import tablespace;
 alter table t4_le import tablespace;
 alter table t5_le import tablespace;
+--enable_warnings
 
 select * from t0_be;
 select * from t1_be;

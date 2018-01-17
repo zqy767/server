@@ -23,41 +23,17 @@ alter table t3_le discard tablespace;
 alter table t4_le discard tablespace;
 alter table t5_le discard tablespace;
 alter table t0_be import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t0_be.cfg', will attempt to import without schema verification
 alter table t1_be import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t1_be.cfg', will attempt to import without schema verification
 alter table t2_be import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2_be.cfg', will attempt to import without schema verification
 alter table t3_be import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t3_be.cfg', will attempt to import without schema verification
 alter table t4_be import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t4_be.cfg', will attempt to import without schema verification
 alter table t5_be import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t5_be.cfg', will attempt to import without schema verification
 alter table t0_le import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t0_le.cfg', will attempt to import without schema verification
 alter table t1_le import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t1_le.cfg', will attempt to import without schema verification
 alter table t2_le import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t2_le.cfg', will attempt to import without schema verification
 alter table t3_le import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t3_le.cfg', will attempt to import without schema verification
 alter table t4_le import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t4_le.cfg', will attempt to import without schema verification
 alter table t5_le import tablespace;
-Warnings:
-Warning	1810	IO Read error: (2, No such file or directory) Error opening './test/t5_le.cfg', will attempt to import without schema verification
 select * from t0_be;
 c1	b
 1	AaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa
