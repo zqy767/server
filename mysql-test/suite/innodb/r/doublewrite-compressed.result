@@ -13,9 +13,8 @@ innodb_fil_make_page_dirty_debug	0
 show variables like 'innodb_saved_page_number_debug';
 Variable_name	Value
 innodb_saved_page_number_debug	0
-SET GLOBAL innodb_file_format = `Barracuda`;
-SET GLOBAL innodb_file_per_table = ON;
-SET GLOBAL innodb_compression_algorithm = 1;
+set global innodb_file_per_table=ON;
+set global innodb_file_format='Barracuda';
 create table t1 (f1 int primary key, f2 blob) engine=innodb page_compressed=yes;
 start transaction;
 insert into t1 values(1, repeat('#',12));
@@ -234,7 +233,7 @@ set global innodb_buf_flush_list_now = 1;
 check table t1;
 Table	Op	Msg_type	Msg_text
 test.t1	check	status	OK
-FOUND /\[ERROR\] InnoDB: .*test.t1\.ibd.*/ in mysqld.1.err
+FOUND /\[ERROR\] InnoDB: .* in tablespace.*test.t1.*/ in mysqld.1.err
 select f1, f2 from t1;
 f1	f2
 1	############
@@ -251,4 +250,4 @@ SELECT * FROM INFORMATION_SCHEMA.ENGINES
 WHERE engine = 'innodb'
 AND support IN ('YES', 'DEFAULT', 'ENABLED');
 ENGINE	SUPPORT	COMMENT	TRANSACTIONS	XA	SAVEPOINTS
-NOT FOUND /\[ERROR\] InnoDB: Cannot create doublewrite buffer/ in mysqld.1.err
+FOUND /\[ERROR\] InnoDB: Cannot create doublewrite buffer/ in mysqld.1.err
