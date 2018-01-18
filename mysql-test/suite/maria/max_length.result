@@ -57,13 +57,24 @@ drop table t1,t2;
 create table t1 (
 c1 int unsigned,
 c2 char(80)
-) Engine=ARIA ROW_FORMAT=FIXED min_rows=1000000;
+) Engine=ARIA ROW_FORMAT=FIXED;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `c1` int(10) unsigned DEFAULT NULL,
   `c2` char(80) DEFAULT NULL
-) ENGINE=Aria DEFAULT CHARSET=latin1 MIN_ROWS=1000000 PAGE_CHECKSUM=1 ROW_FORMAT=FIXED
+) ENGINE=Aria DEFAULT CHARSET=latin1 PAGE_CHECKSUM=1 ROW_FORMAT=FIXED
+insert into t1 select seq,seq from seq_1_to_100000;
+create or replace table t1 (
+c1 int unsigned,
+c2 char(80)
+) Engine=ARIA ROW_FORMAT=FIXED min_rows=100000 max_rows=10;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c1` int(10) unsigned DEFAULT NULL,
+  `c2` char(80) DEFAULT NULL
+) ENGINE=Aria DEFAULT CHARSET=latin1 MIN_ROWS=100000 MAX_ROWS=10 PAGE_CHECKSUM=1 ROW_FORMAT=FIXED
 insert into t1 select seq,seq from seq_1_to_100000;
 create or replace table t1 (
 c1 int unsigned,

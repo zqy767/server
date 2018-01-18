@@ -59,7 +59,14 @@ drop table t1,t2;
 create table t1 (
 c1 int unsigned,
 c2 char(80)
-) Engine=ARIA ROW_FORMAT=FIXED min_rows=1000000;
+) Engine=ARIA ROW_FORMAT=FIXED;
+show create table t1;
+insert into t1 select seq,seq from seq_1_to_100000;
+
+create or replace table t1 (
+c1 int unsigned,
+c2 char(80)
+) Engine=ARIA ROW_FORMAT=FIXED min_rows=100000 max_rows=10;
 show create table t1;
 insert into t1 select seq,seq from seq_1_to_100000;
 
