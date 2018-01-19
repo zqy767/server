@@ -1,5 +1,6 @@
 -- source include/have_innodb.inc
 -- source include/have_example_key_management_plugin.inc
+-- source include/not_embedded.inc
 
 let $innodb_compression_algorithm_orig=`SELECT @@innodb_compression_algorithm`;
 let $innodb_encrypt_tables_orig = `SELECT @@innodb_encrypt_tables`;
