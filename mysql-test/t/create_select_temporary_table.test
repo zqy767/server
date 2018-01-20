@@ -1,0 +1,23 @@
+--source include/have_innodb.inc
+
+SET GLOBAL read_only = on;
+CREATE DATABASE mydb;
+use mydb;
+CREATE TABLE mytable (id INTEGER) ENGINE=InnoDB;
+INSERT INTO mytable (id) VALUES (1);
+
+CREATE USER 'nosuper'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, CREATE TEMPORARY TABLES, LOCK TABLES ON mydb.* TO 'nosuper'@'localhost';
+
+--connect (con1,localhost,nosuper,,mydb)
+
+CREATE TEMPORARY TABLE t1 ENGINE=InnoDB AS SELECT id FROM mytable;
+
+# Cleanup
+
+--disconnect con1
+--connection default
+DROP DATABASE mydb;
+DROP USER nosuper@localhost;
+SET GLOBAL read_only = DEFAULT;
+
