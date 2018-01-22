@@ -3504,7 +3504,13 @@ buf_flush_set_page_cleaner_thread_cnt(ulong new_cnt)
 	/* Wait until defined number of workers has started. */
 	while (page_cleaner->is_running &&
 	       page_cleaner->n_workers != (srv_n_page_cleaners - 1)) {
-		os_event_set(page_cleaner->is_requested);
+		/* When number of page cleaner threads is increasing we do
+		not need to wake existing workers. If number of threads is
+		decreasing, we need to wake them to  let them shutdown. */
+		if (page_cleaner->n_workers > (srv_n_page_cleaners -1 )) {
+			os_event_reset(page_cleaner->is_requested);
+			os_event_set(page_cleaner->is_requested);
+		}
 		os_event_reset(page_cleaner->is_started);
 		os_event_wait_time(page_cleaner->is_started, 1000000);
 	}
@@ -3563,6 +3569,7 @@ DECLARE_THREAD(buf_flush_page_cleaner_worker)(
 		exit those that are not anymore needed. */
 		if (srv_shutdown_state == SRV_SHUTDOWN_NONE &&
 		    thread_no >= (srv_n_page_cleaners - 1)) {
+			os_event_reset(page_cleaner->is_requested);
 			DBUG_LOG("ib_buf", "Exiting "
 				<< thread_no
 				<< " page cleaner worker thread_id "
